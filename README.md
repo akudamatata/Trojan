@@ -48,7 +48,7 @@ docker run --name trojan-mariadb --restart=always -p 3306:3306 -v /home/mariadb:
 
 2. 安装trojan
 ```
-docker run -it -d --name trojan --net=host --restart=always --privileged jrohy/trojan init
+docker run -it -d --name trojan --net=host --restart=always --privileged akudamatata/trojan init
 ```
 运行完后进入容器 `docker exec -it trojan bash`, 然后输入'trojan'即可进行初始化安装   
 
