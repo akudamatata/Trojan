@@ -198,3 +198,31 @@ func ExportCsv(c *gin.Context) *ResponseBody {
 	c.String(200, dataBytes.String())
 	return nil
 }
+
+// GetWebPort 获取web端口
+func GetWebPort() *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+	responseBody.Data = map[string]interface{}{
+		"port": trojan.GetWebPort(),
+	}
+	return &responseBody
+}
+
+// SetWebPort 修改web端口
+func SetWebPort(c *gin.Context) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+	sport := c.PostForm("port")
+	port, err := strconv.Atoi(sport)
+	if err != nil || port <= 0 || port > 65535 {
+		responseBody.Msg = "端口格式不正确"
+		return &responseBody
+	}
+	err = trojan.SetWebPort(port)
+	if err != nil {
+		responseBody.Msg = err.Error()
+	}
+	return &responseBody
+}
+

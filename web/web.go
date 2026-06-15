@@ -102,6 +102,12 @@ func trojanRouter(router *gin.Engine) {
 	router.GET("/trojan/log", func(c *gin.Context) {
 		controller.Log(c)
 	})
+	router.GET("/trojan/webport", func(c *gin.Context) {
+		c.JSON(200, controller.GetWebPort())
+	})
+	router.POST("/trojan/webport", func(c *gin.Context) {
+		c.JSON(200, controller.SetWebPort(c))
+	})
 }
 
 func dataRouter(router *gin.Engine) {
