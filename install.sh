@@ -160,7 +160,7 @@ installTrojan(){
     
     # 临时下载到 tmp 文件以进行完整性检验，避免在下载失败时损坏原有程序
     curl -L "$download_url/$lastest_version/$bin" -o /usr/local/bin/trojan.tmp
-    if [[ ! -s /usr/local/bin/trojan.tmp || $(head -c 9 /usr/local/bin/trojan.tmp 2>/dev/null) == "Not Found" ]]; then
+    if [[ ! -s /usr/local/bin/trojan.tmp ]] || head -c 9 /usr/local/bin/trojan.tmp 2>/dev/null | grep -q "Not Found"; then
         colorEcho $red "管理程序下载失败或文件损坏，请检查网络后重试！"
         rm -f /usr/local/bin/trojan.tmp
         exit 1
