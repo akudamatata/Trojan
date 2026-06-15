@@ -7,6 +7,7 @@ import (
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/net"
+	"strconv"
 	"time"
 	"trojan/asset"
 	"trojan/core"
@@ -153,14 +154,27 @@ func ServerInfo() *ResponseBody {
 		"tcp": len(tcpCon),
 		"udp": len(udpCon),
 	}
+
+	mysql := core.GetMysql()
+	totalUsed, _ := mysql.GetTotalUsedTraffic()
+	topUsers, _ := mysql.GetTop10Users()
+	quotaStr, _ := core.GetValue("server_total_quota")
+	if quotaStr == "" {
+		quotaStr = "-1"
+	}
+	quota, _ := strconv.ParseInt(quotaStr, 10, 64)
+
 	responseBody.Data = map[string]interface{}{
-		"cpu":      cpuPercent,
-		"memory":   vmInfo,
-		"swap":     smInfo,
-		"disk":     diskInfo,
-		"load":     loadInfo,
-		"speed":    si,
-		"netCount": netCount,
+		"cpu":               cpuPercent,
+		"memory":            vmInfo,
+		"swap":              smInfo,
+		"disk":              diskInfo,
+		"load":              loadInfo,
+		"speed":             si,
+		"netCount":          netCount,
+		"serverTotalQuota":  quota,
+		"serverUsedTraffic": totalUsed,
+		"top10Users":        topUsers,
 	}
 	return &responseBody
 }

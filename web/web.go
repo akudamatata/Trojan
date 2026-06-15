@@ -133,6 +133,14 @@ func dataRouter(router *gin.Engine) {
 		data.GET("/resetDay", func(c *gin.Context) {
 			c.JSON(200, controller.GetResetDay())
 		})
+		data.POST("/totalQuota", func(c *gin.Context) {
+			sQuota := c.PostForm("quota")
+			quota, _ := strconv.ParseInt(sQuota, 10, 64)
+			c.JSON(200, controller.SetTotalQuota(quota))
+		})
+		data.GET("/totalQuota", func(c *gin.Context) {
+			c.JSON(200, controller.GetTotalQuota())
+		})
 	}
 }
 

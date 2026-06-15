@@ -410,3 +410,36 @@ func (mysql *Mysql) GetData(ids ...string) ([]*User, error) {
 	}
 	return userList, nil
 }
+
+// GetTotalUsedTraffic 获取所有用户的已用总流量 (upload + download)
+func (mysql *Mysql) GetTotalUsedTraffic() (uint64, error) {
+	db := mysql.GetDB()
+	if db == nil {
+		return 0, errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	var total sql.NullInt64
+	err := db.QueryRow("SELECT SUM(upload + download) FROM users").Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	if total.Valid {
+		return uint64(total.Int64), nil
+	}
+	return 0, nil
+}
+
+// GetTop10Users 获取流量排名前10的用户列表
+func (mysql *Mysql) GetTop10Users() ([]*User, error) {
+	db := mysql.GetDB()
+	if db == nil {
+		return nil, errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	querySQL := "SELECT id, username, password, passwordShow, quota, download, upload, useDays, expiryDate FROM users ORDER BY (upload + download) DESC LIMIT 10"
+	userList, err := queryUserList(db, querySQL)
+	if err != nil {
+		return nil, err
+	}
+	return userList, nil
+}

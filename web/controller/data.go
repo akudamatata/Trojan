@@ -103,3 +103,29 @@ func ScheduleTask() {
 	}
 	c.Start()
 }
+
+// SetTotalQuota 设置服务器总流量限制
+func SetTotalQuota(quota int64) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+	err := core.SetValue("server_total_quota", strconv.FormatInt(quota, 10))
+	if err != nil {
+		responseBody.Msg = err.Error()
+	}
+	return &responseBody
+}
+
+// GetTotalQuota 获取服务器总流量限制
+func GetTotalQuota() *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+	quotaStr, _ := core.GetValue("server_total_quota")
+	if quotaStr == "" {
+		quotaStr = "-1"
+	}
+	quota, _ := strconv.ParseInt(quotaStr, 10, 64)
+	responseBody.Data = map[string]interface{}{
+		"totalQuota": quota,
+	}
+	return &responseBody
+}
