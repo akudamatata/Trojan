@@ -143,14 +143,34 @@ setupCron() {
 
 installTrojan(){
     local show_tip=0
+    lastest_version=$(curl -H 'Cache-Control: no-cache' -s "$version_check" | grep 'tag_name' | cut -d\" -f4)
+    if [[ -z "$lastest_version" ]]; then
+        # 尝试通过 latest 页面重定向获取版本号
+        local redirect_url=$(curl -sL -o /dev/null -w "%{url_effective}" https://github.com/akudamatata/Trojan/releases/latest)
+        lastest_version=${redirect_url##*/}
+    fi
+
+    if [[ -z "$lastest_version" ]]; then
+        colorEcho $red "获取最新版本号失败，请检查网络或稍后重试！"
+        exit 1
+    fi
+
+    [[ $arch == x86_64 ]] && bin="trojan-linux-amd64" || bin="trojan-linux-arm64" 
+    echo "正在下载管理程序`colorEcho $blue $lastest_version`版本..."
+    
+    # 临时下载到 tmp 文件以进行完整性检验，避免在下载失败时损坏原有程序
+    curl -L "$download_url/$lastest_version/$bin" -o /usr/local/bin/trojan.tmp
+    if [[ ! -s /usr/local/bin/trojan.tmp || $(head -c 9 /usr/local/bin/trojan.tmp 2>/dev/null) == "Not Found" ]]; then
+        colorEcho $red "管理程序下载失败或文件损坏，请检查网络后重试！"
+        rm -f /usr/local/bin/trojan.tmp
+        exit 1
+    fi
+
     if [[ $update == 1 ]];then
         systemctl stop trojan-web >/dev/null 2>&1
-        rm -f /usr/local/bin/trojan
     fi
-    lastest_version=$(curl -H 'Cache-Control: no-cache' -s "$version_check" | grep 'tag_name' | cut -d\" -f4)
-    echo "正在下载管理程序`colorEcho $blue $lastest_version`版本..."
-    [[ $arch == x86_64 ]] && bin="trojan-linux-amd64" || bin="trojan-linux-arm64" 
-    curl -L "$download_url/$lastest_version/$bin" -o /usr/local/bin/trojan
+
+    mv -f /usr/local/bin/trojan.tmp /usr/local/bin/trojan
     chmod +x /usr/local/bin/trojan
     if [[ ! -e /etc/systemd/system/trojan-web.service ]];then
         show_tip=1
