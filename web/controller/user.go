@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"net/url"
 	"strconv"
 	"time"
 	"trojan/core"
@@ -162,7 +163,7 @@ func CancelExpire(id uint) *ResponseBody {
 	return &responseBody
 }
 
-// ClashSubInfo 获取clash订阅信息
+// ClashSubInfo 获取clash订阅/通用订阅信息
 func ClashSubInfo(c *gin.Context) {
 	token := c.Query("token")
 	if token == "" {
@@ -200,16 +201,45 @@ func ClashSubInfo(c *gin.Context) {
 			c.Header("subscription-userinfo", userInfo)
 
 			domain, port := trojan.GetDomainAndPort()
-			name := fmt.Sprintf("%s:%d", domain, port)
+			
 			configData := string(core.Load(""))
-			if gjson.Get(configData, "websocket").Exists() && gjson.Get(configData, "websocket.enabled").Bool() {
+			wsEnabled := gjson.Get(configData, "websocket").Exists() && gjson.Get(configData, "websocket.enabled").Bool()
+			var wsPath, wsHostHeader string
+			if wsEnabled {
+				wsPath = gjson.Get(configData, "websocket.path").String()
 				if gjson.Get(configData, "websocket.host").Exists() {
-					hostTemp := gjson.Get(configData, "websocket.host").String()
-					if hostTemp != "" {
-						wsHost = fmt.Sprintf(", headers: {Host: %s}", hostTemp)
+					wsHostHeader = gjson.Get(configData, "websocket.host").String()
+				}
+			}
+
+			flag := c.Query("flag")
+			if flag == "shadowrocket" || flag == "rocket" || flag == "universal" || flag == "base64" {
+				val := url.Values{}
+				val.Set("sni", domain)
+				if wsEnabled {
+					val.Set("type", "ws")
+					if wsPath != "" {
+						val.Set("path", wsPath)
+					}
+					if wsHostHeader != "" {
+						val.Set("host", wsHostHeader)
 					}
 				}
-				wsOpt := fmt.Sprintf("{path: %s%s}", gjson.Get(configData, "websocket.path").String(), wsHost)
+				nodeName := fmt.Sprintf("%s:%d", domain, port)
+				uri := fmt.Sprintf("trojan://%s@%s:%d?%s#%s", 
+					url.PathEscape(password), domain, port, val.Encode(), url.PathEscape(nodeName))
+				
+				result := base64.StdEncoding.EncodeToString([]byte(uri + "\n"))
+				c.String(200, result)
+				return
+			}
+
+			name := fmt.Sprintf("%s:%d", domain, port)
+			if wsEnabled {
+				if wsHostHeader != "" {
+					wsHost = fmt.Sprintf(", headers: {Host: %s}", wsHostHeader)
+				}
+				wsOpt := fmt.Sprintf("{path: %s%s}", wsPath, wsHost)
 				wsData = fmt.Sprintf(", network: ws, udp: true, ws-opts: %s", wsOpt)
 			}
 			proxyData := fmt.Sprintf("  - {name: %s, server: %s, port: %d, type: trojan, password: %s, sni: %s%s}",
