@@ -1,0 +1,17 @@
+[base]
+name=CentOS-7 - Base - mirrors.aliyun.com
+baseurl=http://mirrors.aliyun.com/centos-vault/7.9.2009/os/$basearch/
+gpgcheck=1
+gpgkey=http://mirrors.aliyun.com/centos-vault/RPM-GPG-KEY-CentOS-7
+
+[updates]
+name=CentOS-7 - Updates - mirrors.aliyun.com
+baseurl=http://mirrors.aliyun.com/centos-vault/7.9.2009/updates/$basearch/
+gpgcheck=1
+gpgkey=http://mirrors.aliyun.com/centos-vault/RPM-GPG-KEY-CentOS-7
+
+[extras]
+name=CentOS-7 - Extras - mirrors.aliyun.com
+baseurl=http://mirrors.aliyun.com/centos-vault/7.9.2009/extras/$basearch/
+gpgcheck=1
+gpgkey=http://mirrors.aliyun.com/centos-vault/RPM-GPG-KEY-CentOS-7

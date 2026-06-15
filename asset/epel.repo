@@ -1,0 +1,5 @@
+[epel]
+name=Extra Packages for Enterprise Linux 7 - $basearch
+baseurl=http://mirrors.aliyun.com/epel-archive/7/$basearch/
+gpgcheck=0
+enabled=1

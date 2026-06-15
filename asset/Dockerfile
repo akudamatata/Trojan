@@ -35,6 +35,10 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-w -s" -o
 # Stage 3: Final image
 FROM --platform=$TARGETPLATFORM centos:7
 
+# Copy YUM repository configurations to bypass CentOS 7 EOL source issues
+COPY asset/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
+COPY asset/epel.repo /etc/yum.repos.d/epel.repo
+
 # Copy the pre-built binary from the builder stage
 COPY --from=builder /app/trojan /usr/local/bin/trojan
 
