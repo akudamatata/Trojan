@@ -168,6 +168,7 @@ installTrojan(){
 
     if [[ $update == 1 ]];then
         systemctl stop trojan-web >/dev/null 2>&1
+        pkill -f "trojan web" >/dev/null 2>&1
     fi
 
     mv -f /usr/local/bin/trojan.tmp /usr/local/bin/trojan
