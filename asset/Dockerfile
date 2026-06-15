@@ -1,4 +1,17 @@
-# Stage 1: Build the Go binary
+# Stage 1: Build the Frontend (Vue 3.0 Web UI)
+FROM --platform=$BUILDPLATFORM node:16-alpine AS web-builder
+
+WORKDIR /web
+
+# Clone the original frontend repository
+RUN apk add --no-cache git && \
+    git clone https://github.com/Jrohy/trojan-web.git .
+
+# Install dependencies and build the static files
+RUN npm install && \
+    npm run build
+
+# Stage 2: Build the Go binary
 FROM --platform=$BUILDPLATFORM golang:1.21-alpine AS builder
 
 ARG TARGETOS
@@ -13,10 +26,13 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
+# Copy the compiled web UI files from web-builder to web/templates
+COPY --from=web-builder /web/dist ./web/templates
+
 # Build the binary for the target architecture
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-w -s" -o trojan .
 
-# Stage 2: Final image
+# Stage 3: Final image
 FROM --platform=$TARGETPLATFORM centos:7
 
 # Copy the pre-built binary from the builder stage
