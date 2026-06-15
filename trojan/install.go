@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	dockerInstallUrl = "https://docker-install.netlify.app/install.sh"
-	dbDockerRun      = "docker run --name trojan-mariadb --restart=always -p %d:3306 -v /home/mariadb:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=%s -e MYSQL_ROOT_HOST=%% -e MYSQL_DATABASE=trojan -d mariadb:10.2"
+	// 使用官方 get.docker.com 安装脚本，修复 #875 旧地址已废弃问题
+	dockerInstallUrl = "https://get.docker.com"
+	dbDockerRun      = "docker run --name trojan-mariadb --restart=always -p %d:3306 -v /home/mariadb:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=%s -e MYSQL_ROOT_HOST=%% -e MYSQL_DATABASE=trojan -d mariadb:10.11"
 )
 
 // InstallMenu 安装目录
