@@ -153,6 +153,10 @@ func commonRouter(router *gin.Engine) {
 		common.GET("/serverInfo", func(c *gin.Context) {
 			c.JSON(200, controller.ServerInfo())
 		})
+		common.GET("/trafficHistory", func(c *gin.Context) {
+			historyType := c.DefaultQuery("type", "day")
+			c.JSON(200, controller.TrafficHistory(historyType))
+		})
 		common.GET("/clashRules", func(c *gin.Context) {
 			c.JSON(200, controller.GetClashRules())
 		})
