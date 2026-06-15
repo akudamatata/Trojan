@@ -117,6 +117,26 @@ func updateUser(c *gin.Context) {
 	c.JSON(200, responseBody)
 }
 
+// registerUser 仅在管理员账号尚未初始化时允许注册, 防止未授权修改管理员密码 (CVE-2025-5525)
+func registerUser(c *gin.Context) {
+	responseBody := controller.ResponseBody{Msg: "success"}
+	defer controller.TimeCost(time.Now(), &responseBody)
+	// 检查是否已存在管理员账号, 已存在则禁止通过register接口修改
+	result, _ := core.GetValue("admin_pass")
+	if result != "" {
+		responseBody.Msg = "administrator account already exists, registration is disabled"
+		c.JSON(403, responseBody)
+		return
+	}
+	username := c.DefaultPostForm("username", "admin")
+	pass := c.PostForm("password")
+	err := core.SetValue(fmt.Sprintf("%s_pass", username), pass)
+	if err != nil {
+		responseBody.Msg = err.Error()
+	}
+	c.JSON(200, responseBody)
+}
+
 // RequestUsername 获取请求接口的用户名
 func RequestUsername(c *gin.Context) string {
 	claims := jwt.ExtractClaims(c)
@@ -152,7 +172,7 @@ func Auth(r *gin.Engine, timeout int) *jwt.GinJWTMiddleware {
 		}
 	})
 	r.POST("/auth/login", authMiddleware.LoginHandler)
-	r.POST("/auth/register", updateUser)
+	r.POST("/auth/register", registerUser)
 	authO := r.Group("/auth")
 	authO.Use(authMiddleware.MiddlewareFunc())
 	{

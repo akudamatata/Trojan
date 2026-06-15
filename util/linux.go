@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -96,7 +97,12 @@ func Log(serviceName string, line int) {
 
 // LogChan 指定服务实时日志, 返回chan
 func LogChan(serviceName, param string, closeChan chan byte) (chan string, error) {
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("journalctl -f -u %s -o cat %s", serviceName, param))
+	// 使用参数数组直接调用journalctl, 避免通过bash -c拼接导致命令注入 (CVE-2025-5525)
+	args := []string{"-f", "-u", serviceName, "-o", "cat"}
+	if param != "" {
+		args = append(args, strings.Fields(param)...)
+	}
+	cmd := exec.Command("journalctl", args...)
 
 	stdout, _ := cmd.StdoutPipe()
 

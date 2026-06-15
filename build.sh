@@ -2,7 +2,7 @@
 
 github_token=""
 
-project="Jrohy/trojan"
+project="akudamatata/Trojan"
 
 #获取当前的这个脚本所在绝对路径
 shell_path=$(cd `dirname $0`; pwd)

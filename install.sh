@@ -9,11 +9,11 @@ remove=0
 
 update=0
 
-download_url="https://github.com/Jrohy/trojan/releases/download/"
+download_url="https://github.com/akudamatata/Trojan/releases/download/"
 
-version_check="https://api.github.com/repos/Jrohy/trojan/releases/latest"
+version_check="https://api.github.com/repos/akudamatata/Trojan/releases/latest"
 
-service_url="https://raw.githubusercontent.com/Jrohy/trojan/master/asset/trojan-web.service"
+service_url="https://raw.githubusercontent.com/akudamatata/Trojan/master/asset/trojan-web.service"
 
 [[ -e /var/lib/trojan-manager ]] && update=1
 

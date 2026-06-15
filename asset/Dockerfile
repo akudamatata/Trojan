@@ -4,11 +4,11 @@ LABEL maintainer="Jrohy <euvkzx@Jrohy.com>"
 
 ARG TARGETARCH
 
-ARG VERSION_CHECK="https://api.github.com/repos/Jrohy/trojan/releases/latest"
+ARG VERSION_CHECK="https://api.github.com/repos/akudamatata/Trojan/releases/latest"
 
-ARG DOWNLAOD_URL="https://github.com/Jrohy/trojan/releases/download/"
+ARG DOWNLAOD_URL="https://github.com/akudamatata/Trojan/releases/download/"
 
-ARG SERVICE_URL="https://raw.githubusercontent.com/Jrohy/trojan/master/asset/trojan-web.service"
+ARG SERVICE_URL="https://raw.githubusercontent.com/akudamatata/Trojan/master/asset/trojan-web.service"
 
 ARG SYSTEMCTL_URL="https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/master/files/docker/systemctl.py"
 
