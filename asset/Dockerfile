@@ -5,7 +5,7 @@ WORKDIR /web
 
 # Clone the original frontend repository
 RUN apk add --no-cache git && \
-    git clone https://github.com/Jrohy/trojan-web.git .
+    git clone https://github.com/akudamatata/trojan-web.git .
 
 # Install dependencies and build the static files
 RUN npm install && \

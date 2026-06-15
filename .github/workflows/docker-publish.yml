@@ -69,7 +69,7 @@ jobs:
 
       - name: Build Web UI
         run: |
-          git clone https://github.com/Jrohy/trojan-web.git web-ui
+          git clone https://github.com/akudamatata/trojan-web.git web-ui
           cd web-ui
           npm install
           npm run build
