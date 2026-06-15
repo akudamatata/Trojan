@@ -32,12 +32,8 @@ COPY --from=web-builder /web/dist ./web/templates
 # Build the binary for the target architecture
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-w -s" -o trojan .
 
-# Stage 3: Final image
-FROM --platform=$TARGETPLATFORM centos:7
-
-# Copy YUM repository configurations to bypass CentOS 7 EOL source issues
-COPY asset/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo
-COPY asset/epel.repo /etc/yum.repos.d/epel.repo
+# Stage 3: Final image (use debian instead of EOL CentOS 7)
+FROM --platform=$TARGETPLATFORM debian:bullseye-slim
 
 # Copy the pre-built binary from the builder stage
 COPY --from=builder /app/trojan /usr/local/bin/trojan
@@ -47,8 +43,19 @@ COPY asset/trojan-web.service /etc/systemd/system/trojan-web.service
 
 ARG SYSTEMCTL_URL="https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/master/files/docker/systemctl.py"
 
-RUN yum install socat bash-completion crontabs iptables openssl unzip curl -y && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        socat \
+        bash-completion \
+        cron \
+        iptables \
+        openssl \
+        unzip \
+        curl \
+        ca-certificates && \
     curl -L $SYSTEMCTL_URL -o /usr/bin/systemctl && \
     chmod +x /usr/local/bin/trojan /usr/bin/systemctl && \
     echo "source <(trojan completion bash)" >> ~/.bashrc && \
-    yum clean all
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
