@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"github.com/robfig/cron/v3"
 	"github.com/shirou/gopsutil/cpu"
@@ -8,11 +10,15 @@ import (
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/net"
+	netpkg "net"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 	"trojan/asset"
 	"trojan/core"
 	"trojan/trojan"
+	"trojan/util"
 )
 
 // ResponseBody 结构体
@@ -408,7 +414,7 @@ func ApplyCert() *ResponseBody {
 	}
 
 	// 校验如果是IP则不能申请
-	ip := net.ParseIP(domain)
+	ip := netpkg.ParseIP(domain)
 	if ip != nil {
 		responseBody.Msg = "主域名是IP地址，无法申请证书，请绑定域名后再申请"
 		return &responseBody
