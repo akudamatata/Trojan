@@ -50,10 +50,13 @@ jobs:
           GOOS=linux GOARCH=arm64 go build -ldflags "$ldflags" -o "result/trojan-linux-arm64" .
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            result/trojan-linux-amd64
-            result/trojan-linux-arm64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=${GITHUB_REF#refs/tags/}
+          gh release create "$version" \
+            result/trojan-linux-amd64 \
+            result/trojan-linux-arm64 \
+            --title "$version" \
+            --notes "Release $version" \
+            --clobber
