@@ -13,7 +13,6 @@ import (
 	netpkg "net"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 	"trojan/asset"
 	"trojan/core"
