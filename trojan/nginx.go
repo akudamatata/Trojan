@@ -71,6 +71,11 @@ server {
     listen 127.0.0.1:80;
     server_name %s;
 
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /usr/share/nginx/html;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:%d;
         proxy_set_header Host $host;
@@ -96,6 +101,11 @@ server {
     listen 127.0.0.1:80;
     server_name %s;
 
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /usr/share/nginx/html;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8888;
         proxy_set_header Host $host;
@@ -112,7 +122,15 @@ server {
 server {
     listen 80;
     server_name %s;
-    return 301 https://$host$request_uri;
+
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /usr/share/nginx/html;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 `, fakeDomain, fakePort, panelDomain, panelDomain)
 

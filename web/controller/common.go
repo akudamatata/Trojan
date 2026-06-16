@@ -424,16 +424,6 @@ func ApplyCert() *ResponseBody {
 
 	camoDomain, _ := core.GetValue("camouflage_domain")
 
-	// 1. 停止 Nginx 服务以解除 80 端口占用
-	nginxStopped := false
-	if util.CheckCommandExists("systemctl") {
-		status := util.ExecCommandWithResult("systemctl is-active nginx")
-		if strings.TrimSpace(status) == "active" {
-			util.ExecCommandWithResult("systemctl stop nginx")
-			nginxStopped = true
-		}
-	}
-
 	// 确保 acme.sh 存在
 	if !util.IsExists("/root/.acme.sh/acme.sh") {
 		util.RunWebShell("https://get.acme.sh")
@@ -442,6 +432,7 @@ func ApplyCert() *ResponseBody {
 	// 安装 socat
 	util.InstallPack("socat")
 	util.OpenPort(80)
+	_ = os.MkdirAll("/usr/share/nginx/html", 0755)
 
 	// 检查 acme.sh 版本并升级
 	checkResult := util.ExecCommandWithResult("/root/.acme.sh/acme.sh -v|tr -cd '[0-9]'")
@@ -458,7 +449,7 @@ func ApplyCert() *ResponseBody {
 	if camoDomain != "" {
 		issueCommand += fmt.Sprintf(" -d %s", camoDomain)
 	}
-	issueCommand += " --standalone --keylength ec-256 --force --server letsencrypt --debug"
+	issueCommand += " --webroot /usr/share/nginx/html --keylength ec-256 --force --server letsencrypt --debug"
 
 	// 捕获申请日志
 	cmdLog := util.ExecCommandWithResult(issueCommand)
@@ -473,11 +464,6 @@ func ApplyCert() *ResponseBody {
 		if camoDomain != "" {
 			trojan.ConfigureNginx(domain, camoDomain)
 		}
-	}
-
-	// 3. 恢复启动 Nginx
-	if nginxStopped {
-		util.ExecCommandWithResult("systemctl start nginx")
 	}
 
 	// 重启 Trojan 本身使证书生效
