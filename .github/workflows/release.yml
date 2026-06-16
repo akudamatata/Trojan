@@ -21,6 +21,22 @@ jobs:
         with:
           go-version: '1.21'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Build Frontend
+        run: |
+          git clone --depth 1 https://github.com/Jrohy/trojan-web.git temp-web
+          cd temp-web
+          npm install
+          npm run build
+          cd ..
+          mkdir -p web/templates
+          cp -r temp-web/dist/* web/templates/
+          rm -rf temp-web
+
       - name: Build Binary
         run: |
           mkdir -p result
