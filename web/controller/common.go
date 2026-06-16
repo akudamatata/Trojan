@@ -330,3 +330,156 @@ func ServerInfo() *ResponseBody {
 	}
 	return &responseBody
 }
+
+// CertInfoResponse 证书信息响应结构体
+type CertInfoResponse struct {
+	Subject    string `json:"subject"`
+	ExpireTime string `json:"expireTime"`
+	LeftDays   int    `json:"leftDays"`
+	CertPath   string `json:"certPath"`
+}
+
+// GetCertInfo 获取证书有效期等信息
+func GetCertInfo() *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	config := core.GetConfig()
+	if config == nil || config.SSl.Cert == "" {
+		responseBody.Msg = "未配置证书路径"
+		return &responseBody
+	}
+
+	certPath := config.SSl.Cert
+	if !util.IsExists(certPath) {
+		responseBody.Msg = "证书文件不存在: " + certPath
+		return &responseBody
+	}
+
+	certBytes, err := os.ReadFile(certPath)
+	if err != nil {
+		responseBody.Msg = "读取证书失败: " + err.Error()
+		return &responseBody
+	}
+
+	block, _ := pem.Decode(certBytes)
+	if block == nil {
+		responseBody.Msg = "解码证书失败"
+		return &responseBody
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		responseBody.Msg = "解析证书失败: " + err.Error()
+		return &responseBody
+	}
+
+	utc, _ := time.LoadLocation("Asia/Shanghai")
+	expireTime := cert.NotAfter.In(utc).Format("2006-01-02 15:04:05")
+	leftDays := int(time.Until(cert.NotAfter).Hours() / 24)
+	if leftDays < 0 {
+		leftDays = 0
+	}
+
+	responseBody.Data = CertInfoResponse{
+		Subject:    cert.Subject.CommonName,
+		ExpireTime: expireTime,
+		LeftDays:   leftDays,
+		CertPath:   certPath,
+	}
+	return &responseBody
+}
+
+// ApplyCertResponse 证书申请响应结构体
+type ApplyCertResponse struct {
+	Success bool   `json:"success"`
+	Log     string `json:"log"`
+}
+
+// ApplyCert 自动申请证书方法
+func ApplyCert() *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	domain, _ := trojan.GetDomainAndPort()
+	if domain == "" {
+		responseBody.Msg = "未配置主域名，请先设置主域名后再申请证书"
+		return &responseBody
+	}
+
+	// 校验如果是IP则不能申请
+	ip := net.ParseIP(domain)
+	if ip != nil {
+		responseBody.Msg = "主域名是IP地址，无法申请证书，请绑定域名后再申请"
+		return &responseBody
+	}
+
+	camoDomain, _ := core.GetValue("camouflage_domain")
+
+	// 1. 停止 Nginx 服务以解除 80 端口占用
+	nginxStopped := false
+	if util.CheckCommandExists("systemctl") {
+		status := util.ExecCommandWithResult("systemctl is-active nginx")
+		if strings.TrimSpace(status) == "active" {
+			util.ExecCommandWithResult("systemctl stop nginx")
+			nginxStopped = true
+		}
+	}
+
+	// 确保 acme.sh 存在
+	if !util.IsExists("/root/.acme.sh/acme.sh") {
+		util.RunWebShell("https://get.acme.sh")
+	}
+
+	// 安装 socat
+	util.InstallPack("socat")
+	util.OpenPort(80)
+
+	// 检查 acme.sh 版本并升级
+	checkResult := util.ExecCommandWithResult("/root/.acme.sh/acme.sh -v|tr -cd '[0-9]'")
+	acmeVersion, _ := strconv.Atoi(checkResult)
+	if acmeVersion < 300 {
+		util.ExecCommandWithResult("/root/.acme.sh/acme.sh --upgrade")
+	}
+
+	// 2. 使用 Let's Encrypt 申请
+	email := "admin@" + domain
+	util.ExecCommandWithResult(fmt.Sprintf("bash /root/.acme.sh/acme.sh --server letsencrypt --register-account -m %s", email))
+
+	issueCommand := fmt.Sprintf("bash /root/.acme.sh/acme.sh --issue -d %s", domain)
+	if camoDomain != "" {
+		issueCommand += fmt.Sprintf(" -d %s", camoDomain)
+	}
+	issueCommand += " --standalone --keylength ec-256 --force --server letsencrypt --debug"
+
+	// 捕获申请日志
+	cmdLog := util.ExecCommandWithResult(issueCommand)
+
+	success := false
+	crtFile := "/root/.acme.sh/" + domain + "_ecc" + "/fullchain.cer"
+	keyFile := "/root/.acme.sh/" + domain + "_ecc" + "/" + domain + ".key"
+
+	if util.IsExists(crtFile) && util.IsExists(keyFile) {
+		success = true
+		core.WriteTls(crtFile, keyFile, domain)
+		if camoDomain != "" {
+			trojan.ConfigureNginx(domain, camoDomain)
+		}
+	}
+
+	// 3. 恢复启动 Nginx
+	if nginxStopped {
+		util.ExecCommandWithResult("systemctl start nginx")
+	}
+
+	// 重启 Trojan 本身使证书生效
+	if success {
+		trojan.Restart()
+	}
+
+	responseBody.Data = ApplyCertResponse{
+		Success: success,
+		Log:     cmdLog,
+	}
+	return &responseBody
+}

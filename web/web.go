@@ -176,6 +176,12 @@ func commonRouter(router *gin.Engine) {
 		common.POST("/camouflageDomain", func(c *gin.Context) {
 			c.JSON(200, controller.SetCamouflageDomain(c.PostForm("domain")))
 		})
+		common.GET("/certInfo", func(c *gin.Context) {
+			c.JSON(200, controller.GetCertInfo())
+		})
+		common.POST("/applyCert", func(c *gin.Context) {
+			c.JSON(200, controller.ApplyCert())
+		})
 	}
 }
 
