@@ -109,6 +109,30 @@ func InstallTls() {
 				fmt.Println("输入的域名和本机ip不一致, 请重新输入!")
 			}
 		}
+		var fakeDomain string
+		for {
+			fakeDomain = util.Input("请输入您的伪装站（影视站）域名 (如不配置请直接回车跳过): ", "")
+			if fakeDomain == "" {
+				break
+			}
+			ipList, err := net.LookupIP(fakeDomain)
+			if err != nil {
+				fmt.Println(err)
+				fmt.Println("伪装站域名解析有误,请重新输入或留空")
+				continue
+			}
+			checkIp := false
+			for _, ip := range ipList {
+				if localIP == ip.String() {
+					checkIp = true
+				}
+			}
+			if checkIp {
+				break
+			} else {
+				fmt.Println("输入的伪装站域名和本机ip不一致, 请重新输入或留空!")
+			}
+		}
 		util.InstallPack("socat")
 		if !util.IsExists("/root/.acme.sh/acme.sh") {
 			util.RunWebShell("https://get.acme.sh")
@@ -135,7 +159,11 @@ func InstallTls() {
 			}
 			util.ExecCommand(fmt.Sprintf("bash /root/.acme.sh/acme.sh --server %s --register-account -m %s", server, email))
 		}
-		issueCommand := fmt.Sprintf("bash /root/.acme.sh/acme.sh --issue -d %s --debug --standalone --keylength ec-256 --force --server %s", domain, server)
+		issueCommand := fmt.Sprintf("bash /root/.acme.sh/acme.sh --issue -d %s", domain)
+		if fakeDomain != "" {
+			issueCommand += fmt.Sprintf(" -d %s", fakeDomain)
+		}
+		issueCommand += fmt.Sprintf(" --debug --standalone --keylength ec-256 --force --server %s", server)
 		if server == "buypass" {
 			issueCommand = issueCommand + " --days 170"
 		}
@@ -143,6 +171,9 @@ func InstallTls() {
 		crtFile := "/root/.acme.sh/" + domain + "_ecc" + "/fullchain.cer"
 		keyFile := "/root/.acme.sh/" + domain + "_ecc" + "/" + domain + ".key"
 		core.WriteTls(crtFile, keyFile, domain)
+		if fakeDomain != "" {
+			ConfigureNginx(domain, fakeDomain)
+		}
 	}
 	Restart()
 	util.SystemctlRestart("trojan-web")
