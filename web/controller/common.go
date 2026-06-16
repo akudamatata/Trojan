@@ -467,7 +467,10 @@ func ApplyCert() *ResponseBody {
 
 	// 重启 Trojan 本身使证书生效
 	if success {
-		trojan.Restart()
+		go func() {
+			time.Sleep(2 * time.Second)
+			trojan.Restart()
+		}()
 	}
 
 	responseBody.Data = ApplyCertResponse{
