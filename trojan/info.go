@@ -2,11 +2,11 @@ package trojan
 
 var (
 	// MVersion 程序版本号
-	MVersion string
+	MVersion = "v2.15.34"
 	// BuildDate 编译时间
-	BuildDate string
+	BuildDate = "2026-06-16"
 	// GoVersion go版本
-	GoVersion string
+	GoVersion = "go1.21.0"
 	// GitVersion git版本
-	GitVersion string
+	GitVersion = "master"
 )

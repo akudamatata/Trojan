@@ -28,7 +28,7 @@ jobs:
 
       - name: Build Frontend
         run: |
-          git clone --depth 1 https://github.com/Jrohy/trojan-web.git temp-web
+          git clone --depth 1 https://github.com/akudamatata/trojan-web.git temp-web
           cd temp-web
           npm install
           npm run build
