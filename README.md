@@ -19,6 +19,8 @@ trojan多用户管理部署程序
 - 在线trojan和trojan-go随时切换
 - 支持trojan://分享链接和二维码分享(仅限web页面)
 - 支持转化为clash订阅地址并导入到[clash_for_windows](https://github.com/Fndroid/clash_for_windows_pkg/releases)(仅限web页面)
+- 支持双域名证书申请，实现 Trojan 与 Nginx 伪装站（如 Docker 影视站）完美分流
+- 自动集成 GitHub Actions 云端构建，自动编译前端并打包嵌入后端发布二进制
 - 限制用户使用期限
 
 ## 安装方式
@@ -57,6 +59,45 @@ docker run -it -d --name trojan --net=host --restart=always --privileged akudama
 设置自启动: `systemctl enable trojan-web`
 
 更新管理程序: `source <(curl -sL https://raw.githubusercontent.com/akudamatata/Trojan/master/install.sh)`
+
+## 🚀 双域名分流与伪装站（影视站）配置指引
+
+此功能可在单台服务器上实现：用 `a.com` 访问公开的影视站（HTTP/HTTPS），用 `b.com` 作为您自己独享的代理连接地址和隐藏管理面板入口。
+
+### 第一步：避让 80 端口（针对 Docker 影视站）
+如果您的影视站是 Docker 容器运行，为了将主机的 80 端口释放给 Nginx 作为分流入口，请将您的 `docker-compose.yml` 中的端口映射改为非 80 端口（例如 `8080`）：
+```yaml
+ports:
+  - '8080:3000' # 将宿主机 80 改为 8080 端口
+```
+修改后重启容器：`docker compose down && docker compose up -d`。
+
+### 第二步：申请证书与 Nginx 自动分流
+在服务器终端中运行：
+```bash
+trojan tls
+```
+1. 提示输入管理面板的域名（主域名）；
+2. 提示输入伪装站（影视站）的域名（如不需要可直接回车跳过）；
+3. 输入完后，程序将自动通过 `acme.sh` 申请双域名 TLS 证书，并自动安装配置 Nginx；
+4. 配置完成后，Nginx 会自动接管 80 端口，并引导外部的流量分发。您直接在浏览器中刷新即可看到影视站与面板同时生效！
+
+---
+
+## 🛡️ CentOS 系统下开启 SELinux 导致 502 Bad Gateway 修复
+如果配置完成后，访问您的域名时页面显示 **502 Bad Gateway**，而在 Nginx 的错误日志 `/var/log/nginx/error.log` 中看到了 `Permission denied` 报错，这是由于 CentOS 的 **SELinux 策略**默认禁止了 Nginx 连接本地其他非标端口。
+
+### 解决方案：
+在服务器终端中直接运行以下两条命令放行即可：
+```bash
+# 允许 Nginx (httpd) 进行内部网络反代连接
+setsebool -P httpd_can_network_connect 1
+
+# 重启 Nginx
+systemctl restart nginx
+```
+
+---
 
 ## 运行截图
 ![avatar](asset/1.png)
