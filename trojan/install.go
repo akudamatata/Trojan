@@ -111,7 +111,7 @@ func InstallTls() {
 		}
 		var fakeDomain string
 		for {
-			fakeDomain = util.Input("请输入您的伪装站（影视站）域名 (如不配置请直接回车跳过): ", "")
+			fakeDomain = util.Input("请输入您的伪装站域名 (如不配置请直接回车跳过): ", "")
 			if fakeDomain == "" {
 				break
 			}

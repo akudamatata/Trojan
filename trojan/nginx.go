@@ -18,10 +18,10 @@ func ConfigureNginx(panelDomain, fakeDomain string) {
 	fmt.Println("正在检查并安装 Nginx...")
 	util.InstallPack("nginx")
 
-	// 2. 引导用户输入影视站的实际映射端口
+	// 2. 引导用户输入伪装站的实际映射端口
 	var fakePort int
 	for {
-		portStr := util.Input("请输入您的 Docker 影视站在本地映射的端口 (默认 8080): ", "8080")
+		portStr := util.Input("请输入您的伪装站本地映射的端口 (可以是静态网页或Docker映射，默认 8080): ", "8080")
 		p, err := strconv.Atoi(portStr)
 		if err != nil || p <= 0 || p > 65535 {
 			fmt.Println(util.Red("输入端口有误，必须是 1-65535 之间的整数，请重新输入!"))
