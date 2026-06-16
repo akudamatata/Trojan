@@ -1,142 +1,153 @@
-# trojan
-![](https://img.shields.io/github/v/release/Jrohy/trojan.svg) 
-![](https://img.shields.io/docker/pulls/jrohy/trojan.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Jrohy/trojan)](https://goreportcard.com/report/github.com/Jrohy/trojan)
-[![Downloads](https://img.shields.io/github/downloads/Jrohy/trojan/total.svg)](https://img.shields.io/github/downloads/Jrohy/trojan/total.svg)
-[![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true)](https://www.gnu.org/licenses/gpl-3.0.en.html)
+# 🚀 Trojan Multi-User Manager
 
-
-trojan多用户管理部署程序
-
-## 功能
-- 在线web页面和命令行两种方式管理trojan多用户
-- 启动 / 停止 / 重启 trojan 服务端
-- 支持流量统计和流量限制
-- 命令行模式管理, 支持命令补全
-- 集成acme.sh证书申请
-- 生成客户端配置文件
-- 在线实时查看trojan日志
-- 在线trojan和trojan-go随时切换
-- 支持trojan://分享链接和二维码分享(仅限web页面)
-- 支持转化为clash订阅地址并导入到[clash_for_windows](https://github.com/Fndroid/clash_for_windows_pkg/releases)(仅限web页面)
-- 支持双域名证书申请，实现 Trojan 与 Nginx 伪装站（如 Docker 影视站）完美分流
-- 自动集成 GitHub Actions 云端构建，自动编译前端并打包嵌入后端发布二进制
-- 限制用户使用期限
-
-## 安装方式
-*trojan使用请提前准备好服务器可用的域名*  
-
-###  a. 一键脚本安装
-```
-#安装/更新
-source <(curl -sL https://raw.githubusercontent.com/akudamatata/Trojan/master/install.sh)
-
-#卸载
-source <(curl -sL https://raw.githubusercontent.com/akudamatata/Trojan/master/install.sh) --remove
-
-```
-安装完后输入'trojan'可进入管理程序   
-浏览器访问 https://域名 可在线web页面管理trojan用户  
-前端页面源码地址: [trojan-web](https://github.com/Jrohy/trojan-web)
-
-### b. docker运行
-1. 安装mysql  
-
-因为mariadb内存使用比mysql至少减少一半, 所以推荐使用mariadb数据库
-```
-docker run --name trojan-mariadb --restart=always -p 3306:3306 -v /home/mariadb:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=trojan -e MYSQL_ROOT_HOST=% -e MYSQL_DATABASE=trojan -d mariadb:10.2
-```
-端口和root密码以及持久化目录都可以改成其他的
-
-2. 安装trojan
-```
-docker run -it -d --name trojan --net=host --restart=always --privileged akudamatata/trojan init
-```
-运行完后进入容器 `docker exec -it trojan bash`, 然后输入'trojan'即可进行初始化安装   
-
-启动web服务: `systemctl start trojan-web`   
-
-设置自启动: `systemctl enable trojan-web`
-
-更新管理程序: `source <(curl -sL https://raw.githubusercontent.com/akudamatata/Trojan/master/install.sh)`
-
-## 🚀 双域名分流与伪装站（影视站）配置指引
-
-此功能可在单台服务器上实现：用 `a.com` 访问公开的影视站（HTTP/HTTPS），用 `b.com` 作为您自己独享的代理连接地址和隐藏管理面板入口。
-
-### 第一步：避让 80 端口（针对 Docker 影视站）
-如果您的影视站是 Docker 容器运行，为了将主机的 80 端口释放给 Nginx 作为分流入口，请将您的 `docker-compose.yml` 中的端口映射改为非 80 端口（例如 `8080`）：
-```yaml
-ports:
-  - '8080:3000' # 将宿主机 80 改为 8080 端口
-```
-修改后重启容器：`docker compose down && docker compose up -d`。
-
-### 第二步：申请证书与 Nginx 自动分流
-在服务器终端中运行：
-```bash
-trojan tls
-```
-1. 提示输入管理面板的域名（主域名）；
-2. 提示输入伪装站（影视站）的域名（如不需要可直接回车跳过）；
-3. 输入完后，程序将自动通过 `acme.sh` 申请双域名 TLS 证书，并自动安装配置 Nginx；
-4. 配置完成后，Nginx 会自动接管 80 端口，并引导外部的流量分发。您直接在浏览器中刷新即可看到影视站与面板同时生效！
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/akudamatata/Trojan?style=flat-square&color=6366f1" alt="Release">
+  <img src="https://img.shields.io/docker/pulls/jrohy/trojan?style=flat-square&color=10b981" alt="Docker Pulls">
+  <a href="https://goreportcard.com/report/github.com/Jrohy/trojan">
+    <img src="https://goreportcard.com/badge/github.com/Jrohy/trojan?style=flat-square" alt="Go Report Card">
+  </a>
+  <img src="https://img.shields.io/github/downloads/akudamatata/Trojan/total?style=flat-square&color=f59e0b" alt="Downloads">
+  <img src="https://img.shields.io/badge/license-GPL%20V3-blue?style=flat-square" alt="License">
+</p>
 
 ---
 
-## 🛡️ CentOS 系统下开启 SELinux 导致 502 Bad Gateway 修复
-如果配置完成后，访问您的域名时页面显示 **502 Bad Gateway**，而在 Nginx 的错误日志 `/var/log/nginx/error.log` 中看到了 `Permission denied` 报错，这是由于 CentOS 的 **SELinux 策略**默认禁止了 Nginx 连接本地其他非标端口。
+**Trojan 多用户管理系统** 是一个支持 **Web 网页管理面板** 与 **Linux 命令行终端 (CLI)** 双端运行的高性能 Trojan 部署平台。它不仅可以帮您快速安装管理多用户，还支持智能的 Nginx 流量分流，将普通访问伪装至影视站，极大提升连接的隐蔽性和防阻断能力。
 
-### 解决方案：
-在服务器终端中直接运行以下两条命令放行即可：
+---
+
+## ✨ 核心特性
+
+- 🌐 **双端协同管理**：拥有现代精美的在线 Web 管理页面，同时也保留了高效的 Linux 命令行交互终端。
+- 🛡️ **智能分流与伪装**：支持双域名证书申请，实现 Trojan 代理与 Nginx 伪装站（如 Docker 影视站）的无感共存与完美分流。
+- 🚀 **高度自动化运维**：
+  - **热更证书**：内置 ACME **Webroot 验证模式**，申请和续签证书无需停用 Nginx，业务零中断。
+  - **端口自适应**：在网页端或 CLI 修改面板服务端口时，程序会**自动更新 Nginx 反代配置并平滑重载**，无需手动修改配置文件。
+- ⚡ **多内核自由切换**：支持原生 Trojan 与更高性能的 Trojan-Go 内核在线一键无缝切换。
+- 📊 **多维度监控**：实时查看系统负载、CPU/内存/磁盘资源趋势，以及详细的流量限制、月度/日度流量消耗排行榜。
+- 🔗 **便捷分享与订阅**：支持一键生成 `trojan://` 链接与二维码分享，内置快速导出为 Clash 订阅的功能。
+- 📦 **云端自动打包**：集成 GitHub Actions，自动拉取编译前端静态资源，并将其以二进制格式打包嵌入 Go 后端中，即开即用。
+
+---
+
+## 🛠️ 安装部署
+
+> [!IMPORTANT]
+> 部署前，请确保您的域名解析已正确生效，且服务器的 80/443 端口未被其他非 Nginx 服务占用。
+
+### 方式 A：命令行一键脚本安装（推荐）
+
+通过以下一键命令可以完成面板的安装与后续更新：
+
 ```bash
-# 允许 Nginx (httpd) 进行内部网络反代连接
+# 安装 / 更新面板程序
+source <(curl -sL https://raw.githubusercontent.com/akudamatata/Trojan/master/install.sh)
+
+# 卸载面板程序
+source <(curl -sL https://raw.githubusercontent.com/akudamatata/Trojan/master/install.sh) --remove
+```
+* 安装完成后，在终端直接输入 `trojan` 即可调出命令行管理菜单。
+* 浏览器访问 `https://您的域名` 即可登录 Web 后台进行用户管理。
+
+---
+
+### 方式 B：基于 Docker 容器部署
+
+#### 1. 部署数据库 (推荐使用 MariaDB)
+```bash
+docker run --name trojan-mariadb \
+  --restart=always \
+  -p 3306:3306 \
+  -v /home/mariadb:/var/lib/mysql \
+  -e MYSQL_ROOT_PASSWORD=trojan \
+  -e MYSQL_ROOT_HOST=% \
+  -e MYSQL_DATABASE=trojan \
+  -d mariadb:10.2
+```
+
+#### 2. 初始化安装 Trojan
+```bash
+docker run -it -d --name trojan --net=host --restart=always --privileged akudamatata/trojan init
+```
+* 启动完毕后，进入容器运行初始化：`docker exec -it trojan bash`，在容器内键入 `trojan` 进行配置。
+* **管理面板控制命令**：
+  ```bash
+  systemctl start trojan-web   # 启动网页端
+  systemctl enable trojan-web  # 开启自启动
+  ```
+
+---
+
+## 🧭 双域名分流与伪装站（影视站）配置指引
+
+此功能支持在单台服务器上：使用域名 `a.com` 访问普通的影视站，而使用域名 `b.com` 作为你独享的代理连接服务器与面板后台管理地址。
+
+### 第一步：避让宿主机 80 端口
+如果你的影视网站是通过 Docker 容器运行的，为了将 80 端口释放给宿主机的 Nginx 分流接管，请将影视站容器的端口映射修改为非 80 端口（例如 `8080`）：
+```yaml
+# docker-compose.yml 示例
+services:
+  web:
+    image: movie-site:latest
+    ports:
+      - "8080:80" # 将宿主机端口由 80 映射修改为 8080
+```
+修改完成后重启容器：`docker compose down && docker compose up -d`。
+
+### 第二步：一键配置 TLS 证书与分流
+在服务器终端中直接运行：
+```bash
+trojan tls
+```
+1. 提示输入**管理面板域名**（如 `b.com`）；
+2. 提示输入**伪装站（影视站）域名**（如 `a.com`，若不需要可回车跳过）；
+3. 面板程序会自动申请双域名 SSL 证书，并生成 Nginx 分流配置文件。
+4. 部署完成后，外部所有的 80/443 请求都将由 Nginx 进行智能过滤和代理，分流瞬间生效。
+
+---
+
+## 💡 常见问题与排查
+
+> [!WARNING]
+> **CentOS 系统下开启 SELinux 导致 502 Bad Gateway 修复**
+> 如果证书与分流配置完成后，访问域名返回 **502 Bad Gateway**，且在 Nginx 错误日志 `/var/log/nginx/error.log` 中看到 `Permission denied` 报错，这是因为 CentOS 的 SELinux 默认阻断了 Nginx 连接本地其他非标准端口（如 8888 或 8080）。
+
+**解决方案：**
+在服务器终端直接运行以下两条命令放行即可：
+```bash
+# 允许 Nginx 进行网络反代连接
 setsebool -P httpd_can_network_connect 1
 
-# 重启 Nginx
+# 重启 Nginx 使设置生效
 systemctl restart nginx
 ```
 
 ---
 
-## 运行截图
-![avatar](asset/1.png)
-![avatar](asset/2.png)
+## ⌨️ 命令行指令一览
 
-## 命令行
-```
-Usage:
-  trojan [flags]
-  trojan [command]
+在控制台输入 `trojan` 后，可以使用以下子命令：
 
-Available Commands:
-  add           添加用户
-  clean         清空指定用户流量
-  completion    自动命令补全(支持bash和zsh)
-  del           删除用户
-  help          Help about any command
-  info          用户信息列表
-  log           查看trojan日志
-  port          修改trojan端口
-  restart       重启trojan
-  start         启动trojan
-  status        查看trojan状态
-  stop          停止trojan
-  tls           证书安装
-  update        更新trojan
-  updateWeb     更新trojan管理程序
-  version       显示版本号
-  import [path] 导入sql文件
-  export [path] 导出sql文件
-  web           以web方式启动
+| 指令 | 功能描述 |
+| :--- | :--- |
+| `trojan web` | 启动 Web 面板服务 |
+| `trojan tls` | 自动申请证书并配置 Nginx 分流 |
+| `trojan add` | 在终端快速添加用户 |
+| `trojan del` | 删除用户 |
+| `trojan info` | 显示当前的全部用户信息与流量列表 |
+| `trojan log` | 实时监视并查看 Trojan 核心日志 |
+| `trojan start` / `stop` / `restart` | 启动、停止或重启 Trojan 核心服务 |
+| `trojan status` | 查看 Trojan 核心服务当前的运行状态 |
+| `trojan port` | 修改 Trojan 代理连接端口 |
+| `trojan update` | 一键更新 Trojan 核心核心程序 |
+| `trojan updateWeb` | 更新 Trojan Web 管理程序 |
+| `trojan export [path]` / `import [path]` | 备份导出 / 恢复导入用户 SQL 数据库 |
 
-Flags:
-  -h, --help   help for trojan
-```
+---
 
-## 注意
-安装完trojan后强烈建议开启BBR等加速: [one_click_script](https://github.com/jinwyp/one_click_script)  
+## ❤️ 鸣谢
 
-## Thanks
-感谢JetBrains提供的免费GoLand  
-[![avatar](asset/jetbrains.svg)](https://jb.gg/OpenSource)
+- 感谢原作者 [Jrohy](https://github.com/Jrohy) 开发出的经典面板底座。
+- 感谢 [JetBrains](https://www.jetbrains.com/) 提供优秀的 GoLand 集成开发工具支持。
+
+[![JetBrains logo](asset/jetbrains.svg)](https://jb.gg/OpenSource)
