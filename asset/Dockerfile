@@ -43,7 +43,7 @@ COPY asset/trojan-web.service /etc/systemd/system/trojan-web.service
 
 ARG SYSTEMCTL_URL="https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/master/files/docker/systemctl.py"
 
-RUN apt-get update && \
+RUN (apt-get update || (sleep 5 && apt-get update)) && \
     apt-get install -y --no-install-recommends \
         socat \
         bash-completion \
@@ -53,7 +53,7 @@ RUN apt-get update && \
         unzip \
         curl \
         ca-certificates && \
-    curl -L $SYSTEMCTL_URL -o /usr/bin/systemctl && \
+    curl -L --retry 5 --retry-delay 3 $SYSTEMCTL_URL -o /usr/bin/systemctl && \
     chmod +x /usr/local/bin/trojan /usr/bin/systemctl && \
     echo "source <(trojan completion bash)" >> ~/.bashrc && \
     apt-get clean && \
