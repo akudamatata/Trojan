@@ -54,8 +54,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=${GITHUB_REF#refs/tags/}
-          gh release create "$version" \
+          gh release create "$version" --title "$version" --notes "Release $version" || echo "Release already exists"
+          gh release upload "$version" \
             result/trojan-linux-amd64 \
             result/trojan-linux-arm64 \
-            --title "$version" \
-            --notes "Release $version"
+            --clobber
