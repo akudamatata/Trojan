@@ -339,10 +339,11 @@ func ServerInfo() *ResponseBody {
 
 // CertInfoResponse 证书信息响应结构体
 type CertInfoResponse struct {
-	Subject    string `json:"subject"`
-	ExpireTime string `json:"expireTime"`
-	LeftDays   int    `json:"leftDays"`
-	CertPath   string `json:"certPath"`
+	Subject    string   `json:"subject"`
+	DNSNames   []string `json:"dnsNames"`
+	ExpireTime string   `json:"expireTime"`
+	LeftDays   int      `json:"leftDays"`
+	CertPath   string   `json:"certPath"`
 }
 
 // GetCertInfo 获取证书有效期等信息
@@ -389,6 +390,7 @@ func GetCertInfo() *ResponseBody {
 
 	responseBody.Data = CertInfoResponse{
 		Subject:    cert.Subject.CommonName,
+		DNSNames:   cert.DNSNames,
 		ExpireTime: expireTime,
 		LeftDays:   leftDays,
 		CertPath:   certPath,
