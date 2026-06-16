@@ -102,6 +102,7 @@ func SetWebPort(port int) error {
 	content := string(contentBytes)
 	lines := strings.Split(content, "\n")
 	found := false
+	oldPort := 8888
 	for i, line := range lines {
 		if strings.HasPrefix(strings.TrimSpace(line), "ExecStart=") {
 			parts := strings.Fields(line)
@@ -109,6 +110,11 @@ func SetWebPort(port int) error {
 			hasPort := false
 			for j := 0; j < len(parts); j++ {
 				if parts[j] == "-p" {
+					if j+1 < len(parts) {
+						if op, err := strconv.Atoi(parts[j+1]); err == nil {
+							oldPort = op
+						}
+					}
 					newParts = append(newParts, "-p", strconv.Itoa(port))
 					j++ // 跳过旧端口值
 					hasPort = true
@@ -133,6 +139,9 @@ func SetWebPort(port int) error {
 		return err
 	}
 
+	// 自动更新 Nginx 配置文件中的面板反代端口并重新加载 Nginx
+	updateNginxPort(oldPort, port)
+
 	// 运行 systemctl daemon-reload 使修改生效
 	util.ExecCommand("systemctl daemon-reload")
 
@@ -143,6 +152,34 @@ func SetWebPort(port int) error {
 	}()
 
 	return nil
+}
+
+// updateNginxPort 自动查找并替换 Nginx 配置中的面板反代端口
+func updateNginxPort(oldPort, newPort int) {
+	nginxConfPath := "/etc/nginx/conf.d/trojan.conf"
+	if !util.IsExists(nginxConfPath) {
+		return
+	}
+	contentBytes, err := os.ReadFile(nginxConfPath)
+	if err != nil {
+		return
+	}
+	content := string(contentBytes)
+
+	oldStr := fmt.Sprintf("127.0.0.1:%d", oldPort)
+	newStr := fmt.Sprintf("127.0.0.1:%d", newPort)
+
+	if strings.Contains(content, oldStr) {
+		newContent := strings.ReplaceAll(content, oldStr, newStr)
+		err = os.WriteFile(nginxConfPath, []byte(newContent), 0644)
+		if err == nil {
+			// 测试并重载 nginx
+			err = util.ExecCommand("nginx -t")
+			if err == nil {
+				_ = util.ExecCommand("systemctl reload nginx")
+			}
+		}
+	}
 }
 
 // SetWebPortMenu 命令行菜单设置端口函数
