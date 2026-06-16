@@ -65,7 +65,7 @@ func ConfigureNginx(panelDomain, fakeDomain string) {
 	}
 
 	// 6. 生成 Nginx 配置文件 /etc/nginx/conf.d/trojan.conf
-	nginxConfig := fmt.Sprintf(`# 影视站配置 (a.com) 与 Trojan 本地回落分流
+	nginxConfig := fmt.Sprintf(`# 伪装站配置 (a.com) 与 Trojan 本地回落分流
 server {
     listen 80;
     listen 127.0.0.1:80;
