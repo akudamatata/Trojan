@@ -82,6 +82,26 @@ func SetDomain(domain string) *ResponseBody {
 	return &responseBody
 }
 
+// SetCamouflageDomain 设置伪装域名
+func SetCamouflageDomain(domain string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+	err := core.SetValue("camouflage_domain", domain)
+	if err != nil {
+		responseBody.Msg = err.Error()
+	}
+	return &responseBody
+}
+
+// GetCamouflageDomain 获取伪装域名
+func GetCamouflageDomain() *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+	domain, _ := core.GetValue("camouflage_domain")
+	responseBody.Data = domain
+	return &responseBody
+}
+
 // SetClashRules 设置clash规则
 func SetClashRules(rules string) *ResponseBody {
 	responseBody := ResponseBody{Msg: "success"}

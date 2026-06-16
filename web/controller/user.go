@@ -36,6 +36,10 @@ func UserList(requestUser string) *ResponseBody {
 		}
 	}
 	domain, port := trojan.GetDomainAndPort()
+	camoDomain, _ := core.GetValue("camouflage_domain")
+	if camoDomain != "" {
+		domain = camoDomain
+	}
 	responseBody.Data = map[string]interface{}{
 		"domain":   domain,
 		"port":     port,
@@ -55,6 +59,10 @@ func PageUserList(curPage int, pageSize int) *ResponseBody {
 		return &responseBody
 	}
 	domain, port := trojan.GetDomainAndPort()
+	camoDomain, _ := core.GetValue("camouflage_domain")
+	if camoDomain != "" {
+		domain = camoDomain
+	}
 	responseBody.Data = map[string]interface{}{
 		"domain":   domain,
 		"port":     port,
@@ -201,6 +209,11 @@ func ClashSubInfo(c *gin.Context) {
 			c.Header("subscription-userinfo", userInfo)
 
 			domain, port := trojan.GetDomainAndPort()
+			camoDomain, _ := core.GetValue("camouflage_domain")
+			targetDomain := domain
+			if camoDomain != "" {
+				targetDomain = camoDomain
+			}
 			
 			configData := string(core.Load(""))
 			wsEnabled := gjson.Get(configData, "websocket").Exists() && gjson.Get(configData, "websocket.enabled").Bool()
@@ -215,7 +228,9 @@ func ClashSubInfo(c *gin.Context) {
 			flag := c.Query("flag")
 			if flag == "shadowrocket" || flag == "rocket" || flag == "universal" || flag == "base64" {
 				val := url.Values{}
-				val.Set("sni", domain)
+				if camoDomain == "" {
+					val.Set("sni", domain)
+				}
 				if wsEnabled {
 					val.Set("type", "ws")
 					if wsPath != "" {
@@ -225,16 +240,16 @@ func ClashSubInfo(c *gin.Context) {
 						val.Set("host", wsHostHeader)
 					}
 				}
-				nodeName := fmt.Sprintf("%s:%d", domain, port)
+				nodeName := fmt.Sprintf("%s:%d", targetDomain, port)
 				uri := fmt.Sprintf("trojan://%s@%s:%d?%s#%s", 
-					url.PathEscape(password), domain, port, val.Encode(), url.PathEscape(nodeName))
+					url.PathEscape(password), targetDomain, port, val.Encode(), url.PathEscape(nodeName))
 				
 				result := base64.StdEncoding.EncodeToString([]byte(uri + "\n"))
 				c.String(200, result)
 				return
 			}
 
-			name := fmt.Sprintf("%s:%d", domain, port)
+			name := fmt.Sprintf("%s:%d", targetDomain, port)
 			if wsEnabled {
 				if wsHostHeader != "" {
 					wsHost = fmt.Sprintf(", headers: {Host: %s}", wsHostHeader)
@@ -242,8 +257,12 @@ func ClashSubInfo(c *gin.Context) {
 				wsOpt := fmt.Sprintf("{path: %s%s}", wsPath, wsHost)
 				wsData = fmt.Sprintf(", network: ws, udp: true, ws-opts: %s", wsOpt)
 			}
-			proxyData := fmt.Sprintf("  - {name: %s, server: %s, port: %d, type: trojan, password: %s, sni: %s%s}",
-				name, domain, port, password, domain, wsData)
+			sniStr := ""
+			if camoDomain == "" {
+				sniStr = fmt.Sprintf(", sni: %s", domain)
+			}
+			proxyData := fmt.Sprintf("  - {name: %s, server: %s, port: %d, type: trojan, password: %s%s%s}",
+				name, targetDomain, port, password, sniStr, wsData)
 			result := fmt.Sprintf(`proxies:
 %s
 
