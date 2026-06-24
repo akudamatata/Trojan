@@ -16,6 +16,8 @@ var (
 	authRegex = regexp.MustCompile(`([0-9a-fA-F\.\:\[\]]+):(\d+)\s+authenticated as\s+([a-zA-Z0-9_\-]+)`)
 	// 正则 2：匹配目标连接，形如：user_1 connected to github.com:443
 	connectRegex = regexp.MustCompile(`([a-zA-Z0-9_\-]+)\s+connected to\s+([a-zA-Z0-9\.\-]+):(\d+)`)
+	// 正则 3：匹配 Trojan-Go 日志，形如：user 95128474c32898ab25e5e2a844b46552aa90da745ca8ce6f073956e8 from 116.115.19.244:13166 tunneling to mmbiz.qpic.cn:80
+	tgRegex = regexp.MustCompile(`user\s+([0-9a-fA-F]{56})\s+from\s+([0-9a-fA-F\.\:\[\]]+):(\d+)\s+tunneling to\s+(\S+):(\d+)`)
 )
 
 // ipBuffer 和 domainBuffer 用于批量聚合写入，避免每条日志都触发一次 MySQL 连接
@@ -156,6 +158,29 @@ func StartDaemon() {
 						domainBufferMu.Unlock()
 					}
 				}
+
+				// 3. 匹配 Trojan-Go 日志连入与访问目标 → 写入内存缓冲区
+				if tgMatches := tgRegex.FindStringSubmatch(line); len(tgMatches) > 5 {
+					hash := tgMatches[1]
+					ip := strings.Trim(tgMatches[2], "[]")
+					targetHost := tgMatches[4]
+
+					username := getUsernameByHash(hash)
+					if username != "" {
+						if net.ParseIP(ip) != nil {
+							ipBufferMu.Lock()
+							ipBuffer[username+"|"+ip] = true
+							ipBufferMu.Unlock()
+						}
+
+						domain := cleanDomain(targetHost)
+						if domain != "" {
+							domainBufferMu.Lock()
+							domainBuffer[domainKey{Username: username, Domain: domain}]++
+							domainBufferMu.Unlock()
+						}
+					}
+				}
 			}
 
 			// 如果读取中断，刷新剩余缓冲后等待 5 秒重新连接日志流
@@ -165,4 +190,40 @@ func StartDaemon() {
 			time.Sleep(5 * time.Second)
 		}
 	}()
+}
+
+var (
+	userCacheMu sync.RWMutex
+	userCache   = make(map[string]string) // hash -> username
+)
+
+// getUsernameByHash 根据密码 SHA224 密文哈希反查用户名（使用内存缓存防止频繁查询数据库）
+func getUsernameByHash(hash string) string {
+	userCacheMu.RLock()
+	username, exists := userCache[hash]
+	userCacheMu.RUnlock()
+	if exists {
+		return username
+	}
+
+	mysql := GetMysql()
+	db := mysql.GetDB()
+	if db == nil {
+		return ""
+	}
+	defer db.Close()
+
+	err := db.QueryRow("SELECT username FROM users WHERE password = ?", hash).Scan(&username)
+	if err != nil {
+		// 缓存空白结果，防止频繁的无效查询（缓存击穿保护）
+		userCacheMu.Lock()
+		userCache[hash] = ""
+		userCacheMu.Unlock()
+		return ""
+	}
+
+	userCacheMu.Lock()
+	userCache[hash] = username
+	userCacheMu.Unlock()
+	return username
 }
