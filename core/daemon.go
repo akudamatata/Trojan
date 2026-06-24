@@ -26,6 +26,14 @@ type domainKey struct {
 	Domain   string
 }
 
+type ActiveConnection struct {
+	Username    string    `json:"username"`
+	ClientIP    string    `json:"client_ip"`
+	ClientPort  string    `json:"client_port"`
+	TargetHost  string    `json:"target_host"`
+	ConnectedAt time.Time `json:"connected_at"`
+}
+
 var (
 	ipBufferMu sync.Mutex
 	// ipBuffer: key = "username|ip", value = true (去重即可)
@@ -34,6 +42,10 @@ var (
 	domainBufferMu sync.Mutex
 	// domainBuffer: key = domainKey, value = 本轮累计的访问次数
 	domainBuffer = make(map[domainKey]int)
+
+	ActiveConnsMu sync.RWMutex
+	ActiveConns   = make(map[string]*ActiveConnection) // key = clientIP:clientPort
+	lastAuthIP    = make(map[string]string)            // username -> clientIP:clientPort
 )
 
 // getActiveService 检测当前运行的是 trojan-go 还是 trojan
@@ -137,12 +149,17 @@ func StartDaemon() {
 				// 1. 匹配 IP 连入 → 写入内存缓冲区（去重）
 				if authMatches := authRegex.FindStringSubmatch(line); len(authMatches) > 3 {
 					ip := strings.Trim(authMatches[1], "[]")
+					port := authMatches[2]
 					username := authMatches[3]
 
 					if net.ParseIP(ip) != nil {
 						ipBufferMu.Lock()
 						ipBuffer[username+"|"+ip] = true
 						ipBufferMu.Unlock()
+
+						ActiveConnsMu.Lock()
+						lastAuthIP[username] = ip + ":" + port
+						ActiveConnsMu.Unlock()
 					}
 				}
 
@@ -150,6 +167,7 @@ func StartDaemon() {
 				if connMatches := connectRegex.FindStringSubmatch(line); len(connMatches) > 3 {
 					username := connMatches[1]
 					targetHost := connMatches[2]
+					targetPort := connMatches[3]
 
 					domain := cleanDomain(targetHost)
 					if domain != "" {
@@ -157,13 +175,30 @@ func StartDaemon() {
 						domainBuffer[domainKey{Username: username, Domain: domain}]++
 						domainBufferMu.Unlock()
 					}
+
+					ActiveConnsMu.Lock()
+					if ipPort, ok := lastAuthIP[username]; ok {
+						parts := strings.SplitN(ipPort, ":", 2)
+						if len(parts) == 2 {
+							ActiveConns[ipPort] = &ActiveConnection{
+								Username:    username,
+								ClientIP:    parts[0],
+								ClientPort:  parts[1],
+								TargetHost:  targetHost + ":" + targetPort,
+								ConnectedAt: time.Now(),
+							}
+						}
+					}
+					ActiveConnsMu.Unlock()
 				}
 
 				// 3. 匹配 Trojan-Go 日志连入与访问目标 → 写入内存缓冲区
 				if tgMatches := tgRegex.FindStringSubmatch(line); len(tgMatches) > 5 {
 					hash := tgMatches[1]
 					ip := strings.Trim(tgMatches[2], "[]")
+					port := tgMatches[3]
 					targetHost := tgMatches[4]
+					targetPort := tgMatches[5]
 
 					username := getUsernameByHash(hash)
 					if username != "" {
@@ -179,6 +214,17 @@ func StartDaemon() {
 							domainBuffer[domainKey{Username: username, Domain: domain}]++
 							domainBufferMu.Unlock()
 						}
+
+						ActiveConnsMu.Lock()
+						ipPort := ip + ":" + port
+						ActiveConns[ipPort] = &ActiveConnection{
+							Username:    username,
+							ClientIP:    ip,
+							ClientPort:  port,
+							TargetHost:  targetHost + ":" + targetPort,
+							ConnectedAt: time.Now(),
+						}
+						ActiveConnsMu.Unlock()
 					}
 				}
 			}

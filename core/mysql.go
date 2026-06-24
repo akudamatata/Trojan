@@ -98,6 +98,33 @@ CREATE TABLE IF NOT EXISTS user_domains (
 ) DEFAULT CHARSET=utf8mb4;
 `
 
+var CreateUserTrafficDailyTableSql = `
+CREATE TABLE IF NOT EXISTS user_traffic_daily (
+    username VARCHAR(64) NOT NULL,
+    date DATE NOT NULL,
+    upload BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    download BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (username, date)
+) DEFAULT CHARSET=utf8mb4;
+`
+
+var CreateUserSubLogsTableSql = `
+CREATE TABLE IF NOT EXISTS user_sub_logs (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    username VARCHAR(64) NOT NULL,
+    client_ip VARCHAR(45) NOT NULL,
+    user_agent VARCHAR(255) NOT NULL DEFAULT '',
+    country VARCHAR(64) NOT NULL DEFAULT '',
+    region VARCHAR(64) NOT NULL DEFAULT '',
+    city VARCHAR(64) NOT NULL DEFAULT '',
+    isp VARCHAR(128) NOT NULL DEFAULT '',
+    accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    INDEX (username),
+    INDEX (accessed_at)
+) DEFAULT CHARSET=utf8mb4;
+`
+
 // GetDB 获取mysql数据库连接
 func (mysql *Mysql) GetDB() *sql.DB {
 	// 屏蔽mysql驱动包 of 日志输出
@@ -130,6 +157,12 @@ func (mysql *Mysql) CreateTable() {
 	}
 	if _, err := db.Exec(CreateUserDomainsTableSql); err != nil {
 		fmt.Println("CreateUserDomainsTableSql error:", err)
+	}
+	if _, err := db.Exec(CreateUserTrafficDailyTableSql); err != nil {
+		fmt.Println("CreateUserTrafficDailyTableSql error:", err)
+	}
+	if _, err := db.Exec(CreateUserSubLogsTableSql); err != nil {
+		fmt.Println("CreateUserSubLogsTableSql error:", err)
 	}
 }
 
@@ -660,8 +693,115 @@ func (mysql *Mysql) CleanOldUserLogs() error {
 	defer db.Close()
 	_, errIP := db.Exec("DELETE FROM user_ips WHERE last_connected_at < NOW() - INTERVAL 30 DAY")
 	_, errDomain := db.Exec("DELETE FROM user_domains WHERE last_visited_at < NOW() - INTERVAL 30 DAY")
-	if errIP != nil {
 		return errIP
 	}
 	return errDomain
+}
+
+// UserTrafficDaily 结构体，用于返回用户每日流量记录
+type UserTrafficDaily struct {
+	Date     string `json:"date"`
+	Upload   uint64 `json:"upload"`
+	Download uint64 `json:"download"`
+}
+
+// UserSubLog 结构体，用于返回用户订阅日志
+type UserSubLog struct {
+	ID         uint   `json:"id"`
+	ClientIP   string `json:"client_ip"`
+	UserAgent  string `json:"user_agent"`
+	Country    string `json:"country"`
+	Region     string `json:"region"`
+	City       string `json:"city"`
+	ISP        string `json:"isp"`
+	AccessedAt string `json:"accessed_at"`
+}
+
+// SaveUserTrafficDaily 保存或累加每日流量
+func (mysql *Mysql) SaveUserTrafficDaily(username string, date string, upload uint64, download uint64) error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, err := db.Exec(`
+		INSERT INTO user_traffic_daily (username, date, upload, download) 
+		VALUES (?, ?, ?, ?) 
+		ON DUPLICATE KEY UPDATE upload = upload + ?, download = download + ?
+	`, username, date, upload, download, upload, download)
+	return err
+}
+
+// GetUserTrafficHistory 获取用户最近 limit 天的流量记录
+func (mysql *Mysql) GetUserTrafficHistory(username string, limit int) ([]UserTrafficDaily, error) {
+	db := mysql.GetDB()
+	if db == nil {
+		return nil, errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT DATE_FORMAT(date, '%m-%d') as fmt_date, upload, download FROM user_traffic_daily 
+		WHERE username = ? 
+		ORDER BY date DESC LIMIT ?
+	`, username, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []UserTrafficDaily
+	for rows.Next() {
+		var item UserTrafficDaily
+		if err := rows.Scan(&item.Date, &item.Upload, &item.Download); err == nil {
+			list = append(list, item)
+		}
+	}
+	// 反转列表，使之按日期升序排列，方便图表展示
+	for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
+		list[i], list[j] = list[j], list[i]
+	}
+	return list, nil
+}
+
+// SaveUserSubLog 保存订阅拉取日志
+func (mysql *Mysql) SaveUserSubLog(username, clientIP, userAgent, country, region, city, isp string) error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, err := db.Exec(`
+		INSERT INTO user_sub_logs (username, client_ip, user_agent, country, region, city, isp, accessed_at) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+	`, username, clientIP, userAgent, country, region, city, isp)
+	return err
+}
+
+// GetUserSubLogs 获取订阅链接访问日志
+func (mysql *Mysql) GetUserSubLogs(username string, limit int) ([]UserSubLog, error) {
+	db := mysql.GetDB()
+	if db == nil {
+		return nil, errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT id, client_ip, user_agent, country, region, city, isp, 
+		       DATE_FORMAT(accessed_at, '%Y-%m-%d %H:%i:%s') as fmt_time 
+		FROM user_sub_logs 
+		WHERE username = ? 
+		ORDER BY accessed_at DESC LIMIT ?
+	`, username, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []UserSubLog
+	for rows.Next() {
+		var item UserSubLog
+		if err := rows.Scan(&item.ID, &item.ClientIP, &item.UserAgent, &item.Country, &item.Region, &item.City, &item.ISP, &item.AccessedAt); err == nil {
+			list = append(list, item)
+		}
+	}
+	return list, nil
 }

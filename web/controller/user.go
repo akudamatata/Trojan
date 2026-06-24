@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os/exec"
 	"strconv"
@@ -15,6 +16,9 @@ import (
 	"time"
 	"trojan/core"
 	"trojan/trojan"
+
+	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 // UserList 获取用户列表
@@ -206,6 +210,13 @@ func ClashSubInfo(c *gin.Context) {
 	if user != nil {
 		pass, _ := base64.StdEncoding.DecodeString(user.Password)
 		if password == string(pass) {
+			// 记录订阅拉取日志
+			clientIP := c.ClientIP()
+			userAgent := c.Request.UserAgent()
+			go func() {
+				country, region, city, isp := queryGeoIP(clientIP)
+				mysql.SaveUserSubLog(username, clientIP, userAgent, country, region, city, isp)
+			}()
 			var wsData, wsHost string
 			userInfo := fmt.Sprintf("upload=%d, download=%d", user.Upload, user.Download)
 			if user.Quota != -1 {
@@ -408,6 +419,343 @@ func SaveIPGeo(username, ip, country, region, city, isp string) *ResponseBody {
 	mysql := core.GetMysql()
 	if err := mysql.UpdateIPGeo(username, ip, country, region, city, isp); err != nil {
 		responseBody.Msg = err.Error()
+	}
+	return &responseBody
+}
+
+// queryGeoIP 从 Go 后台发起 GeoIP 查询
+func queryGeoIP(ip string) (country, region, city, isp string) {
+	country, region, city, isp = "unknown", "", "", "unknown"
+	if ip == "127.0.0.1" || ip == "::1" || strings.HasPrefix(ip, "192.168.") || strings.HasPrefix(ip, "10.") {
+		return "局域网", "", "", "Local Network"
+	}
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://ip-api.com/json/%s?lang=zh-CN", ip))
+	if err != nil {
+		resp, err = client.Get(fmt.Sprintf("https://ipapi.co/%s/json/", ip))
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		var res map[string]interface{}
+		json.Unmarshal(body, &res)
+		if res != nil {
+			if c, ok := res["country_name"].(string); ok { country = c }
+			if r, ok := res["region"].(string); ok { region = r }
+			if ci, ok := res["city"].(string); ok { city = ci }
+			if o, ok := res["org"].(string); ok { isp = o }
+		}
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var res map[string]interface{}
+	json.Unmarshal(body, &res)
+	if res != nil && res["status"] == "success" {
+		if c, ok := res["country"].(string); ok { country = c }
+		if r, ok := res["regionName"].(string); ok { region = r }
+		if ci, ok := res["city"].(string); ok { city = ci }
+		if i, ok := res["isp"].(string); ok { isp = i }
+	}
+	return
+}
+
+// getActiveSocketsWithPort 获取所有当前活跃的远程 socket 连接（包含 IP 与端口）
+func getActiveSocketsWithPort() []string {
+	_, port := trojan.GetDomainAndPort()
+	cmdStr := fmt.Sprintf("ss -t -H -a sport = :%d", port)
+	out, err := exec.Command("bash", "-c", cmdStr).CombinedOutput()
+	if err != nil {
+		return []string{}
+	}
+
+	var ipPorts []string
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 5 {
+			peer := fields[4]
+			if idx := strings.LastIndex(peer, ":"); idx != -1 {
+				ip := peer[:idx]
+				ip = strings.Trim(ip, "[]")
+				portStr := peer[idx+1:]
+				if parsedIP := net.ParseIP(ip); parsedIP != nil {
+					ipPorts = append(ipPorts, ip+":"+portStr)
+				}
+			}
+		}
+	}
+	return ipPorts
+}
+
+// GetActiveConnections 获取用户的实时活跃连接列表
+func GetActiveConnections(username string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	// 1. 获取所有当前活跃的远程 socket 连接
+	activeIPPorts := getActiveSocketsWithPort()
+
+	// 2. 清理内存中已经关闭的会话，并保证当前活跃会话在内存 map 中
+	core.ActiveConnsMu.Lock()
+	activeMap := make(map[string]bool)
+	for _, ipPort := range activeIPPorts {
+		activeMap[ipPort] = true
+	}
+
+	// 删除 ActiveConns 中已关闭的会话
+	for ipPort := range core.ActiveConns {
+		if !activeMap[ipPort] {
+			delete(core.ActiveConns, ipPort)
+		}
+	}
+
+	// 补充没有记录在 ActiveConns 里的活跃连接
+	mysql := core.GetMysql()
+	for _, ipPort := range activeIPPorts {
+		if _, ok := core.ActiveConns[ipPort]; !ok {
+			parts := strings.SplitN(ipPort, ":", 2)
+			if len(parts) == 2 {
+				// 反查用户名
+				connUser := ""
+				rows, err := mysql.GetDB().Query("SELECT username FROM user_ips WHERE client_ip = ? LIMIT 1", parts[0])
+				if err == nil {
+					if rows.Next() {
+						rows.Scan(&connUser)
+					}
+					rows.Close()
+				}
+				if connUser == "" {
+					connUser = "unknown"
+				}
+
+				core.ActiveConns[ipPort] = &core.ActiveConnection{
+					Username:    connUser,
+					ClientIP:    parts[0],
+					ClientPort:  parts[1],
+					TargetHost:  "Direct Tunnel",
+					ConnectedAt: time.Now().Add(-5 * time.Second),
+				}
+			}
+		}
+	}
+
+	// 3. 过滤出当前用户的会话
+	var userConns []core.ActiveConnection
+	for _, conn := range core.ActiveConns {
+		if conn.Username == username {
+			userConns = append(userConns, *conn)
+		}
+	}
+	core.ActiveConnsMu.Unlock()
+
+	// 保护返回值不为 nil
+	if userConns == nil {
+		userConns = []core.ActiveConnection{}
+	}
+
+	responseBody.Data = userConns
+	return &responseBody
+}
+
+// KillActiveConnection 强行切断用户的某个活跃会话
+func KillActiveConnection(clientIP string, clientPort string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	if clientIP == "" || clientPort == "" {
+		responseBody.Msg = "IP or Port is null"
+		return &responseBody
+	}
+
+	// 执行 ss -K state established dst [ip] dport = :[port]
+	cmdStr := fmt.Sprintf("ss -K state established dst %s dport = :%s", clientIP, clientPort)
+	out, err := exec.Command("bash", "-c", cmdStr).CombinedOutput()
+	if err != nil {
+		responseBody.Msg = fmt.Sprintf("Kill failed: %v, output: %s", err, string(out))
+		return &responseBody
+	}
+
+	// 成功后，从内存 map 中删除
+	core.ActiveConnsMu.Lock()
+	delete(core.ActiveConns, clientIP+":"+clientPort)
+	core.ActiveConnsMu.Unlock()
+
+	return &responseBody
+}
+
+// GetUserTrafficHistory 获取用户最近 30 天的每日流量数据
+func GetUserTrafficHistory(username string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	mysql := core.GetMysql()
+	list, err := mysql.GetUserTrafficHistory(username, 30)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+
+	if list == nil {
+		list = []core.UserTrafficDaily{}
+	}
+
+	responseBody.Data = list
+	return &responseBody
+}
+
+// GetUserSubLogs 获取订阅审计日志和常用客户端占比
+func GetUserSubLogs(username string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	mysql := core.GetMysql()
+	logs, err := mysql.GetUserSubLogs(username, 15)
+	if err != nil {
+		logs = []core.UserSubLog{}
+	}
+
+	allLogs, err := mysql.GetUserSubLogs(username, 100)
+	clientStats := make(map[string]int)
+	if err == nil {
+		for _, logItem := range allLogs {
+			ua := strings.ToLower(logItem.UserAgent)
+			clientType := "Other"
+			if strings.Contains(ua, "clash") {
+				clientType = "Clash"
+			} else if strings.Contains(ua, "shadowrocket") || strings.Contains(ua, "rocket") {
+				clientType = "Shadowrocket"
+			} else if strings.Contains(ua, "sing-box") {
+				clientType = "Sing-Box"
+			} else if strings.Contains(ua, "surge") {
+				clientType = "Surge"
+			} else if strings.Contains(ua, "quantumult") {
+				clientType = "Quantumult X"
+			} else if strings.Contains(ua, "mozilla") || strings.Contains(ua, "chrome") || strings.Contains(ua, "safari") {
+				clientType = "Browser"
+			}
+			clientStats[clientType]++
+		}
+	}
+
+	var suspectAlert bool
+	var suspectCount int
+	db := mysql.GetDB()
+	if db != nil {
+		err := db.QueryRow(`
+			SELECT COUNT(DISTINCT client_ip) FROM user_sub_logs 
+			WHERE username = ? AND accessed_at >= NOW() - INTERVAL 1 DAY
+		`, username).Scan(&suspectCount)
+		if err == nil && suspectCount >= 3 {
+			suspectAlert = true
+		}
+		db.Close()
+	}
+
+	if logs == nil {
+		logs = []core.UserSubLog{}
+	}
+
+	responseBody.Data = map[string]interface{}{
+		"logs":         logs,
+		"clientStats":  clientStats,
+		"suspectAlert": suspectAlert,
+		"suspectCount": suspectCount,
+	}
+	return &responseBody
+}
+
+// GetUserDomainStats 获取域名偏好分类与合规评分
+func GetUserDomainStats(username string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	mysql := core.GetMysql()
+	domains, err := mysql.GetUserTopDomains(username, 100)
+	if err != nil {
+		domains = []core.UserDomain{}
+	}
+
+	categories := map[string]int{
+		"Video":   0,
+		"Social":  0,
+		"Tech":    0,
+		"Abuse":   0,
+		"Search":  0,
+	}
+
+	videoKeywords := []string{"youtube", "netflix", "twitch", "bilibili", "tiktok", "vimeo", "hulu", "disney"}
+	socialKeywords := []string{"telegram", "tg.me", "twitter", "t.co", "facebook", "instagram", "whatsapp", "discord"}
+	techKeywords := []string{"github", "githubusercontent", "stackoverflow", "npmjs", "docker", "python", "golang", "microsoft", "google", "gpt", "openai"}
+	abuseKeywords := []string{"torrent", "tracker", "peer", "bittorrent", "utorrent", "opentracker", "announce", "magnet", "xunlei", "thunder", "qbittorrent"}
+
+	score := 100
+	abuseCount := 0
+
+	for _, d := range domains {
+		dName := strings.ToLower(d.Domain)
+		isMatched := false
+
+		for _, kw := range abuseKeywords {
+			if strings.Contains(dName, kw) {
+				categories["Abuse"] += d.VisitCount
+				abuseCount += d.VisitCount
+				isMatched = true
+				break
+			}
+		}
+
+		if isMatched {
+			continue
+		}
+
+		for _, kw := range videoKeywords {
+			if strings.Contains(dName, kw) {
+				categories["Video"] += d.VisitCount
+				isMatched = true
+				break
+			}
+		}
+		if isMatched {
+			continue
+		}
+
+		for _, kw := range socialKeywords {
+			if strings.Contains(dName, kw) {
+				categories["Social"] += d.VisitCount
+				isMatched = true
+				break
+			}
+		}
+		if isMatched {
+			continue
+		}
+
+		for _, kw := range techKeywords {
+			if strings.Contains(dName, kw) {
+				categories["Tech"] += d.VisitCount
+				isMatched = true
+				break
+			}
+		}
+		if isMatched {
+			continue
+		}
+
+		categories["Search"] += d.VisitCount
+	}
+
+	if abuseCount > 0 {
+		score = 100 - (abuseCount * 5)
+		if score < 10 {
+			score = 10
+		}
+	}
+
+	responseBody.Data = map[string]interface{}{
+		"categories": categories,
+		"score":      score,
 	}
 	return &responseBody
 }

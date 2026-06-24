@@ -72,6 +72,27 @@ func userRouter(router *gin.Engine) {
 			id, _ := strconv.Atoi(stringId)
 			c.JSON(200, controller.DelUser(uint(id)))
 		})
+		user.GET("/active-connections", func(c *gin.Context) {
+			username := c.Query("username")
+			c.JSON(200, controller.GetActiveConnections(username))
+		})
+		user.POST("/active-connections/kill", func(c *gin.Context) {
+			clientIP := c.PostForm("client_ip")
+			clientPort := c.PostForm("client_port")
+			c.JSON(200, controller.KillActiveConnection(clientIP, clientPort))
+		})
+		user.GET("/traffic-history", func(c *gin.Context) {
+			username := c.Query("username")
+			c.JSON(200, controller.GetUserTrafficHistory(username))
+		})
+		user.GET("/sub-logs", func(c *gin.Context) {
+			username := c.Query("username")
+			c.JSON(200, controller.GetUserSubLogs(username))
+		})
+		user.GET("/domain-stats", func(c *gin.Context) {
+			username := c.Query("username")
+			c.JSON(200, controller.GetUserDomainStats(username))
+		})
 	}
 }
 
