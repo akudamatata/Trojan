@@ -228,6 +228,7 @@ func Start(host string, port, timeout int, isSSL bool) {
 	commonRouter(router)
 	controller.ScheduleTask()
 	controller.CollectTask()
+	core.GetMysql().CreateTable()
 	core.StartDaemon()
 	util.OpenPort(port)
 	if isSSL {
