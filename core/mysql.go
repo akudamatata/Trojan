@@ -67,9 +67,28 @@ CREATE TABLE IF NOT EXISTS users (
 ) DEFAULT CHARSET=utf8mb4;
 `
 
+var CreateUserIpsTableSql = `
+CREATE TABLE IF NOT EXISTS user_ips (
+    username VARCHAR(64) NOT NULL,
+    client_ip VARCHAR(45) NOT NULL,
+    last_connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (username, client_ip)
+) DEFAULT CHARSET=utf8mb4;
+`
+
+var CreateUserDomainsTableSql = `
+CREATE TABLE IF NOT EXISTS user_domains (
+    username VARCHAR(64) NOT NULL,
+    domain VARCHAR(255) NOT NULL,
+    visit_count INT NOT NULL DEFAULT 1,
+    last_visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (username, domain)
+) DEFAULT CHARSET=utf8mb4;
+`
+
 // GetDB 获取mysql数据库连接
 func (mysql *Mysql) GetDB() *sql.DB {
-	// 屏蔽mysql驱动包的日志输出
+	// 屏蔽mysql驱动包 of 日志输出
 	mysqlDriver.SetLogger(log.New(io.Discard, "", 0))
 	conn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", mysql.Username, mysql.Password, mysql.ServerAddr, mysql.ServerPort, mysql.Database)
 	db, err := sql.Open("mysql", conn)
@@ -83,9 +102,18 @@ func (mysql *Mysql) GetDB() *sql.DB {
 // CreateTable 不存在trojan user表则自动创建
 func (mysql *Mysql) CreateTable() {
 	db := mysql.GetDB()
+	if db == nil {
+		return
+	}
 	defer db.Close()
 	if _, err := db.Exec(CreateTableSql); err != nil {
-		fmt.Println(err)
+		fmt.Println("CreateTableSql error:", err)
+	}
+	if _, err := db.Exec(CreateUserIpsTableSql); err != nil {
+		fmt.Println("CreateUserIpsTableSql error:", err)
+	}
+	if _, err := db.Exec(CreateUserDomainsTableSql); err != nil {
+		fmt.Println("CreateUserDomainsTableSql error:", err)
 	}
 }
 
@@ -442,4 +470,109 @@ func (mysql *Mysql) GetTop10Users() ([]*User, error) {
 		return nil, err
 	}
 	return userList, nil
+}
+
+// UserDomain 结构体，用于返回域名的访问数据
+type UserDomain struct {
+	Domain     string `json:"domain"`
+	VisitCount int    `json:"visit_count"`
+}
+
+// SaveUserIP 保存或更新用户的连入 IP (只保留最近30天)
+func (mysql *Mysql) SaveUserIP(username string, clientIP string) error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, err := db.Exec(`
+		INSERT INTO user_ips (username, client_ip, last_connected_at) 
+		VALUES (?, ?, NOW()) 
+		ON DUPLICATE KEY UPDATE last_connected_at = NOW()
+	`, username, clientIP)
+	return err
+}
+
+// SaveUserDomain 增加或更新用户域名的访问统计
+func (mysql *Mysql) SaveUserDomain(username string, domain string) error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, err := db.Exec(`
+		INSERT INTO user_domains (username, domain, visit_count, last_visited_at) 
+		VALUES (?, ?, 1, NOW()) 
+		ON DUPLICATE KEY UPDATE visit_count = visit_count + 1, last_visited_at = NOW()
+	`, username, domain)
+	return err
+}
+
+// GetUserIPs 获取用户最近一个月内连入过的 IP 列表
+func (mysql *Mysql) GetUserIPs(username string) ([]string, error) {
+	db := mysql.GetDB()
+	if db == nil {
+		return nil, errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT client_ip FROM user_ips 
+		WHERE username = ? AND last_connected_at >= NOW() - INTERVAL 30 DAY 
+		ORDER BY last_connected_at DESC
+	`, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ips []string
+	for rows.Next() {
+		var ip string
+		if err := rows.Scan(&ip); err == nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips, nil
+}
+
+// GetUserTopDomains 获取用户最常访问的前 10 个域名
+func (mysql *Mysql) GetUserTopDomains(username string, limit int) ([]UserDomain, error) {
+	db := mysql.GetDB()
+	if db == nil {
+		return nil, errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT domain, visit_count FROM user_domains 
+		WHERE username = ? AND last_visited_at >= NOW() - INTERVAL 30 DAY 
+		ORDER BY visit_count DESC LIMIT ?
+	`, username, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var domains []UserDomain
+	for rows.Next() {
+		var ud UserDomain
+		if err := rows.Scan(&ud.Domain, &ud.VisitCount); err == nil {
+			domains = append(domains, ud)
+		}
+	}
+	return domains, nil
+}
+
+// CleanOldUserLogs 清理 30 天以前的旧连接与访问数据
+func (mysql *Mysql) CleanOldUserLogs() error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, errIP := db.Exec("DELETE FROM user_ips WHERE last_connected_at < NOW() - INTERVAL 30 DAY")
+	_, errDomain := db.Exec("DELETE FROM user_domains WHERE last_visited_at < NOW() - INTERVAL 30 DAY")
+	if errIP != nil {
+		return errIP
+	}
+	return errDomain
 }

@@ -23,6 +23,10 @@ func userRouter(router *gin.Engine) {
 			requestUser := RequestUsername(c)
 			c.JSON(200, controller.UserList(requestUser))
 		})
+		user.GET("/detail", func(c *gin.Context) {
+			username := c.Query("username")
+			c.JSON(200, controller.UserDetail(username))
+		})
 		user.GET("/page", func(c *gin.Context) {
 			curPageStr := c.DefaultQuery("curPage", "1")
 			pageSizeStr := c.DefaultQuery("pageSize", "10")
@@ -215,6 +219,7 @@ func Start(host string, port, timeout int, isSSL bool) {
 	commonRouter(router)
 	controller.ScheduleTask()
 	controller.CollectTask()
+	core.StartDaemon()
 	util.OpenPort(port)
 	if isSSL {
 		config := core.GetConfig()

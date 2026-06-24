@@ -88,6 +88,9 @@ func ScheduleTask() {
 		} else if needRestart {
 			trojan.Restart()
 		}
+		if err := mysql.CleanOldUserLogs(); err != nil {
+			fmt.Println("CleanOldUserLogs error: " + err.Error())
+		}
 	})
 
 	dayStr, _ := core.GetValue("reset_day")

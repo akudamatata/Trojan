@@ -280,3 +280,38 @@ proxy-groups:
 	}
 	c.String(200, "token is error")
 }
+
+// UserDetail 获取用户详情（包括最近IP和Top10网站）
+func UserDetail(username string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	mysql := core.GetMysql()
+	user := mysql.GetUserByName(username)
+	if user == nil {
+		responseBody.Msg = "用户不存在"
+		return &responseBody
+	}
+
+	ips, err := mysql.GetUserIPs(username)
+	if err != nil {
+		ips = []string{}
+	}
+
+	domains, err := mysql.GetUserTopDomains(username, 10)
+	if err != nil {
+		domains = []core.UserDomain{}
+	}
+
+	responseBody.Data = map[string]interface{}{
+		"username":   user.Username,
+		"download":   user.Download,
+		"upload":     user.Upload,
+		"quota":      user.Quota,
+		"useDays":    user.UseDays,
+		"expiryDate": user.ExpiryDate,
+		"ips":        ips,
+		"domains":    domains,
+	}
+	return &responseBody
+}
