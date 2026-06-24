@@ -83,7 +83,7 @@ docker run -it -d --name trojan --net=host --restart=always --privileged akudama
 此功能支持在单台服务器上：使用域名 `a.com` 访问普通的伪装站，而使用域名 `b.com` 作为你独享的代理连接服务器与面板后台管理地址。
 
 ### 第一步：避让宿主机 80 端口
-如果你的影视网站是通过 Docker 容器运行的，为了将 80 端口释放给宿主机的 Nginx 分流接管，请将伪装站容器的端口映射修改为非 80 端口（例如 `8080`）：
+如果你的伪装站是通过 Docker 容器运行的，为了将 80 端口释放给宿主机的 Nginx 分流接管，请将伪装站容器的端口映射修改为非 80 端口（例如 `8080`）：
 ```yaml
 # docker-compose.yml 示例
 services:
