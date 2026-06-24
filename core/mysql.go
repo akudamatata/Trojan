@@ -693,6 +693,7 @@ func (mysql *Mysql) CleanOldUserLogs() error {
 	defer db.Close()
 	_, errIP := db.Exec("DELETE FROM user_ips WHERE last_connected_at < NOW() - INTERVAL 30 DAY")
 	_, errDomain := db.Exec("DELETE FROM user_domains WHERE last_visited_at < NOW() - INTERVAL 30 DAY")
+	if errIP != nil {
 		return errIP
 	}
 	return errDomain
