@@ -385,6 +385,7 @@ func UserDetail(username string) *ResponseBody {
 	}
 
 	responseBody.Data = map[string]interface{}{
+		"id":         user.ID,
 		"username":   user.Username,
 		"password":   user.Password, // 返回 Base64 编码的明文密码以生成分享订阅链接
 		"download":   user.Download,
