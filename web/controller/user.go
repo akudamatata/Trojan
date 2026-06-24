@@ -320,8 +320,12 @@ func getActiveClientIPs() []string {
 			if idx := strings.LastIndex(peer, ":"); idx != -1 {
 				ip := peer[:idx]
 				ip = strings.Trim(ip, "[]")
-				if net.ParseIP(ip) != nil {
-					ipMap[ip] = true
+				if parsedIP := net.ParseIP(ip); parsedIP != nil {
+					if ipv4 := parsedIP.To4(); ipv4 != nil {
+						ipMap[ipv4.String()] = true
+					} else {
+						ipMap[parsedIP.String()] = true
+					}
 				}
 			}
 		}
