@@ -27,6 +27,15 @@ func userRouter(router *gin.Engine) {
 			username := c.Query("username")
 			c.JSON(200, controller.UserDetail(username))
 		})
+		user.POST("/geo", func(c *gin.Context) {
+			username := c.PostForm("username")
+			ip := c.PostForm("ip")
+			country := c.PostForm("country")
+			region := c.PostForm("region")
+			city := c.PostForm("city")
+			isp := c.PostForm("isp")
+			c.JSON(200, controller.SaveIPGeo(username, ip, country, region, city, isp))
+		})
 		user.GET("/page", func(c *gin.Context) {
 			curPageStr := c.DefaultQuery("curPage", "1")
 			pageSizeStr := c.DefaultQuery("pageSize", "10")

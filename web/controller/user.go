@@ -1,12 +1,17 @@
 package controller
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"net"
 	"net/url"
+	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 	"trojan/core"
 	"trojan/trojan"
@@ -40,10 +45,16 @@ func UserList(requestUser string) *ResponseBody {
 	if camoDomain != "" {
 		domain = camoDomain
 	}
+
+	// 获取当前在线用户名列表
+	activeIPs := getActiveClientIPs()
+	onlineUsers := mysql.GetOnlineUsernames(activeIPs)
+
 	responseBody.Data = map[string]interface{}{
-		"domain":   domain,
-		"port":     port,
-		"userList": userList,
+		"domain":      domain,
+		"port":        port,
+		"userList":    userList,
+		"onlineUsers": onlineUsers,
 	}
 	return &responseBody
 }
@@ -281,6 +292,48 @@ proxy-groups:
 	c.String(200, "token is error")
 }
 
+// UserIPStatus 结构体，用于返回用户的 IP 连接状态（含缓存的 GeoIP 信息）
+type UserIPStatus struct {
+	IP       string `json:"ip"`
+	IsActive bool   `json:"is_active"`
+	Country  string `json:"country"`
+	Region   string `json:"region"`
+	City     string `json:"city"`
+	ISP      string `json:"isp"`
+}
+
+// getActiveClientIPs 从系统网络套接字中获取当前活跃连接的所有 IP
+func getActiveClientIPs() []string {
+	_, port := trojan.GetDomainAndPort()
+	cmdStr := fmt.Sprintf("ss -t -H -a sport = :%d", port)
+	out, err := exec.Command("bash", "-c", cmdStr).CombinedOutput()
+	if err != nil {
+		return []string{}
+	}
+
+	ipMap := make(map[string]bool)
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 5 {
+			peer := fields[4]
+			if idx := strings.LastIndex(peer, ":"); idx != -1 {
+				ip := peer[:idx]
+				ip = strings.Trim(ip, "[]")
+				if net.ParseIP(ip) != nil {
+					ipMap[ip] = true
+				}
+			}
+		}
+	}
+
+	var ips []string
+	for ip := range ipMap {
+		ips = append(ips, ip)
+	}
+	return ips
+}
+
 // UserDetail 获取用户详情（包括最近IP和Top10网站）
 func UserDetail(username string) *ResponseBody {
 	responseBody := ResponseBody{Msg: "success"}
@@ -293,9 +346,27 @@ func UserDetail(username string) *ResponseBody {
 		return &responseBody
 	}
 
-	ips, err := mysql.GetUserIPs(username)
+	ipInfos, err := mysql.GetUserIPs(username)
 	if err != nil {
-		ips = []string{}
+		ipInfos = []core.UserIPInfo{}
+	}
+
+	activeIPs := getActiveClientIPs()
+	activeIPMap := make(map[string]bool)
+	for _, ip := range activeIPs {
+		activeIPMap[ip] = true
+	}
+
+	var ipStatusList []UserIPStatus
+	for _, info := range ipInfos {
+		ipStatusList = append(ipStatusList, UserIPStatus{
+			IP:       info.IP,
+			IsActive: activeIPMap[info.IP],
+			Country:  info.Country,
+			Region:   info.Region,
+			City:     info.City,
+			ISP:      info.ISP,
+		})
 	}
 
 	domains, err := mysql.GetUserTopDomains(username, 10)
@@ -303,15 +374,36 @@ func UserDetail(username string) *ResponseBody {
 		domains = []core.UserDomain{}
 	}
 
+	domain, port := trojan.GetDomainAndPort()
+	camoDomain, _ := core.GetValue("camouflage_domain")
+	if camoDomain != "" {
+		domain = camoDomain
+	}
+
 	responseBody.Data = map[string]interface{}{
 		"username":   user.Username,
+		"password":   user.Password, // 返回 Base64 编码的明文密码以生成分享订阅链接
 		"download":   user.Download,
 		"upload":     user.Upload,
 		"quota":      user.Quota,
 		"useDays":    user.UseDays,
 		"expiryDate": user.ExpiryDate,
-		"ips":        ips,
+		"ips":        ipStatusList,
 		"domains":    domains,
+		"domain":     domain,
+		"port":       port,
 	}
 	return &responseBody
 }
+
+// SaveIPGeo 前端查询到 GeoIP 后回写缓存到数据库
+func SaveIPGeo(username, ip, country, region, city, isp string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+	mysql := core.GetMysql()
+	if err := mysql.UpdateIPGeo(username, ip, country, region, city, isp); err != nil {
+		responseBody.Msg = err.Error()
+	}
+	return &responseBody
+}
+

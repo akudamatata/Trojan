@@ -72,9 +72,21 @@ CREATE TABLE IF NOT EXISTS user_ips (
     username VARCHAR(64) NOT NULL,
     client_ip VARCHAR(45) NOT NULL,
     last_connected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    country VARCHAR(64) NOT NULL DEFAULT '',
+    region VARCHAR(64) NOT NULL DEFAULT '',
+    city VARCHAR(64) NOT NULL DEFAULT '',
+    isp VARCHAR(128) NOT NULL DEFAULT '',
     PRIMARY KEY (username, client_ip)
 ) DEFAULT CHARSET=utf8mb4;
 `
+
+// AlterUserIpsGeoSql 为已存在的 user_ips 表追加 GeoIP 缓存列（不存在则添加，已存在则忽略报错）
+var AlterUserIpsGeoSql = []string{
+	"ALTER TABLE user_ips ADD COLUMN country VARCHAR(64) NOT NULL DEFAULT ''",
+	"ALTER TABLE user_ips ADD COLUMN region VARCHAR(64) NOT NULL DEFAULT ''",
+	"ALTER TABLE user_ips ADD COLUMN city VARCHAR(64) NOT NULL DEFAULT ''",
+	"ALTER TABLE user_ips ADD COLUMN isp VARCHAR(128) NOT NULL DEFAULT ''",
+}
 
 var CreateUserDomainsTableSql = `
 CREATE TABLE IF NOT EXISTS user_domains (
@@ -111,6 +123,10 @@ func (mysql *Mysql) CreateTable() {
 	}
 	if _, err := db.Exec(CreateUserIpsTableSql); err != nil {
 		fmt.Println("CreateUserIpsTableSql error:", err)
+	}
+	// 对已存在的旧表，尝试追加 GeoIP 缓存列（列已存在时 MySQL 会报 Duplicate column 错误，直接忽略）
+	for _, alterSql := range AlterUserIpsGeoSql {
+		db.Exec(alterSql)
 	}
 	if _, err := db.Exec(CreateUserDomainsTableSql); err != nil {
 		fmt.Println("CreateUserDomainsTableSql error:", err)
@@ -472,6 +488,15 @@ func (mysql *Mysql) GetTop10Users() ([]*User, error) {
 	return userList, nil
 }
 
+// UserIPInfo 结构体，用于返回用户 IP 连接信息（含缓存的 GeoIP 数据）
+type UserIPInfo struct {
+	IP      string `json:"ip"`
+	Country string `json:"country"`
+	Region  string `json:"region"`
+	City    string `json:"city"`
+	ISP     string `json:"isp"`
+}
+
 // UserDomain 结构体，用于返回域名的访问数据
 type UserDomain struct {
 	Domain     string `json:"domain"`
@@ -508,15 +533,30 @@ func (mysql *Mysql) SaveUserDomain(username string, domain string) error {
 	return err
 }
 
-// GetUserIPs 获取用户最近一个月内连入过的 IP 列表
-func (mysql *Mysql) GetUserIPs(username string) ([]string, error) {
+// SaveUserDomainBatch 批量累加用户域名的访问统计（由 Daemon 定时刷新调用）
+func (mysql *Mysql) SaveUserDomainBatch(username string, domain string, count int) error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, err := db.Exec(`
+		INSERT INTO user_domains (username, domain, visit_count, last_visited_at) 
+		VALUES (?, ?, ?, NOW()) 
+		ON DUPLICATE KEY UPDATE visit_count = visit_count + ?, last_visited_at = NOW()
+	`, username, domain, count, count)
+	return err
+}
+
+// GetUserIPs 获取用户最近一个月内连入过的 IP 列表（含缓存的 GeoIP 数据）
+func (mysql *Mysql) GetUserIPs(username string) ([]UserIPInfo, error) {
 	db := mysql.GetDB()
 	if db == nil {
 		return nil, errors.New("can't connect mysql")
 	}
 	defer db.Close()
 	rows, err := db.Query(`
-		SELECT client_ip FROM user_ips 
+		SELECT client_ip, country, region, city, isp FROM user_ips 
 		WHERE username = ? AND last_connected_at >= NOW() - INTERVAL 30 DAY 
 		ORDER BY last_connected_at DESC
 	`, username)
@@ -525,14 +565,63 @@ func (mysql *Mysql) GetUserIPs(username string) ([]string, error) {
 	}
 	defer rows.Close()
 
-	var ips []string
+	var ips []UserIPInfo
 	for rows.Next() {
-		var ip string
-		if err := rows.Scan(&ip); err == nil {
-			ips = append(ips, ip)
+		var info UserIPInfo
+		if err := rows.Scan(&info.IP, &info.Country, &info.Region, &info.City, &info.ISP); err == nil {
+			ips = append(ips, info)
 		}
 	}
 	return ips, nil
+}
+
+// UpdateIPGeo 将前端查询到的 GeoIP 结果回写缓存到数据库
+func (mysql *Mysql) UpdateIPGeo(username, clientIP, country, region, city, isp string) error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, err := db.Exec(`
+		UPDATE user_ips SET country = ?, region = ?, city = ?, isp = ? 
+		WHERE username = ? AND client_ip = ?
+	`, country, region, city, isp, username, clientIP)
+	return err
+}
+
+// GetOnlineUsernames 根据当前活跃的客户端 IP 列表，反查数据库得到在线的用户名
+func (mysql *Mysql) GetOnlineUsernames(activeIPs []string) []string {
+	if len(activeIPs) == 0 {
+		return []string{}
+	}
+	db := mysql.GetDB()
+	if db == nil {
+		return []string{}
+	}
+	defer db.Close()
+
+	// 构建 IN (?, ?, ...) 参数
+	placeholders := make([]string, len(activeIPs))
+	args := make([]interface{}, len(activeIPs))
+	for i, ip := range activeIPs {
+		placeholders[i] = "?"
+		args[i] = ip
+	}
+	query := fmt.Sprintf("SELECT DISTINCT username FROM user_ips WHERE client_ip IN (%s)", strings.Join(placeholders, ","))
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return []string{}
+	}
+	defer rows.Close()
+
+	var usernames []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err == nil {
+			usernames = append(usernames, name)
+		}
+	}
+	return usernames
 }
 
 // GetUserTopDomains 获取用户最常访问的前 10 个域名

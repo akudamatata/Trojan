@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 var (
@@ -14,6 +16,22 @@ var (
 	authRegex = regexp.MustCompile(`([0-9a-fA-F\.\:\[\]]+):(\d+)\s+authenticated as\s+([a-zA-Z0-9_\-]+)`)
 	// 正则 2：匹配目标连接，形如：user_1 connected to github.com:443
 	connectRegex = regexp.MustCompile(`([a-zA-Z0-9_\-]+)\s+connected to\s+([a-zA-Z0-9\.\-]+):(\d+)`)
+)
+
+// ipBuffer 和 domainBuffer 用于批量聚合写入，避免每条日志都触发一次 MySQL 连接
+type domainKey struct {
+	Username string
+	Domain   string
+}
+
+var (
+	ipBufferMu sync.Mutex
+	// ipBuffer: key = "username|ip", value = true (去重即可)
+	ipBuffer = make(map[string]bool)
+
+	domainBufferMu sync.Mutex
+	// domainBuffer: key = domainKey, value = 本轮累计的访问次数
+	domainBuffer = make(map[domainKey]int)
 )
 
 // getActiveService 检测当前运行的是 trojan-go 还是 trojan
@@ -41,66 +59,110 @@ func cleanDomain(host string) string {
 	return host
 }
 
+// flushBuffers 将内存中聚合的 IP 和域名数据批量写入 MySQL，然后清空缓冲区
+// 这样无论日志流量多高，MySQL 写入频率固定为每 flushInterval 一次
+func flushBuffers() {
+	mysql := GetMysql()
+
+	// 1. 刷新 IP 缓冲区
+	ipBufferMu.Lock()
+	ipSnapshot := ipBuffer
+	ipBuffer = make(map[string]bool)
+	ipBufferMu.Unlock()
+
+	for key := range ipSnapshot {
+		parts := strings.SplitN(key, "|", 2)
+		if len(parts) == 2 {
+			if err := mysql.SaveUserIP(parts[0], parts[1]); err != nil {
+				fmt.Printf("[Daemon] Error flushing IP %s: %v\n", key, err)
+			}
+		}
+	}
+
+	// 2. 刷新域名缓冲区
+	domainBufferMu.Lock()
+	domainSnapshot := domainBuffer
+	domainBuffer = make(map[domainKey]int)
+	domainBufferMu.Unlock()
+
+	for dk, count := range domainSnapshot {
+		if err := mysql.SaveUserDomainBatch(dk.Username, dk.Domain, count); err != nil {
+			fmt.Printf("[Daemon] Error flushing domain %s->%s: %v\n", dk.Username, dk.Domain, err)
+		}
+	}
+
+	if len(ipSnapshot) > 0 || len(domainSnapshot) > 0 {
+		fmt.Printf("[Daemon] Flushed %d IPs, %d domains to DB\n", len(ipSnapshot), len(domainSnapshot))
+	}
+}
+
 // StartDaemon 启动日志监听守护进程
 func StartDaemon() {
 	service := getActiveService()
 	fmt.Printf("[Daemon] Starting log parser for service: %s\n", service)
 
+	// 启动定时刷新协程：每 30 秒将内存中的聚合数据批量写入 MySQL
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			flushBuffers()
+		}
+	}()
+
+	// 启动日志读取协程
 	go func() {
 		for {
 			cmd := exec.Command("journalctl", "-f", "-u", service, "-o", "cat")
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
 				fmt.Printf("[Daemon] Error creating stdout pipe: %v. Retrying in 5s...\n", err)
+				time.Sleep(5 * time.Second)
 				continue
 			}
 
 			if err := cmd.Start(); err != nil {
 				fmt.Printf("[Daemon] Error starting journalctl: %v. Retrying in 5s...\n", err)
+				time.Sleep(5 * time.Second)
 				continue
 			}
 
 			scanner := bufio.NewScanner(stdout)
-			mysql := GetMysql()
 
 			for scanner.Scan() {
 				line := scanner.Text()
 
-				// 1. 匹配 IP 连入
+				// 1. 匹配 IP 连入 → 写入内存缓冲区（去重）
 				if authMatches := authRegex.FindStringSubmatch(line); len(authMatches) > 3 {
 					ip := strings.Trim(authMatches[1], "[]")
 					username := authMatches[3]
-					
-					// 仅保存有效的 IP
+
 					if net.ParseIP(ip) != nil {
-						if err := mysql.SaveUserIP(username, ip); err != nil {
-							fmt.Printf("[Daemon] Error saving IP for %s: %v\n", username, err)
-						} else {
-							fmt.Printf("[Daemon] Saved IP: %s -> %s\n", username, ip)
-						}
+						ipBufferMu.Lock()
+						ipBuffer[username+"|"+ip] = true
+						ipBufferMu.Unlock()
 					}
 				}
 
-				// 2. 匹配访问的目标网站/域名
+				// 2. 匹配访问的目标网站/域名 → 写入内存缓冲区（聚合计数）
 				if connMatches := connectRegex.FindStringSubmatch(line); len(connMatches) > 3 {
 					username := connMatches[1]
 					targetHost := connMatches[2]
-					
+
 					domain := cleanDomain(targetHost)
 					if domain != "" {
-						if err := mysql.SaveUserDomain(username, domain); err != nil {
-							fmt.Printf("[Daemon] Error saving domain for %s: %v\n", username, err)
-						} else {
-							fmt.Printf("[Daemon] Saved domain visit: %s -> %s\n", username, domain)
-						}
+						domainBufferMu.Lock()
+						domainBuffer[domainKey{Username: username, Domain: domain}]++
+						domainBufferMu.Unlock()
 					}
 				}
 			}
 
-			// 如果读取中断，等待 5 秒重新连接日志流
+			// 如果读取中断，刷新剩余缓冲后等待 5 秒重新连接日志流
+			flushBuffers()
 			cmd.Wait()
 			fmt.Println("[Daemon] Journalctl stream closed. Reconnecting in 5s...")
-			exec.Command("sleep", "5").Run()
+			time.Sleep(5 * time.Second)
 		}
 	}()
 }
