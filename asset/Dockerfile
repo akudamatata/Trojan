@@ -32,8 +32,8 @@ COPY --from=web-builder /web/dist ./web/templates
 # Build the binary for the target architecture
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-w -s" -o trojan .
 
-# Stage 3: Final image (use debian instead of EOL CentOS 7)
-FROM --platform=$TARGETPLATFORM debian:bullseye-slim
+# Stage 3: Final image (debian bookworm-slim, Debian 12 stable)
+FROM --platform=$TARGETPLATFORM debian:bookworm-slim
 
 # Copy the pre-built binary from the builder stage
 COPY --from=builder /app/trojan /usr/local/bin/trojan
@@ -43,7 +43,7 @@ COPY asset/trojan-web.service /etc/systemd/system/trojan-web.service
 
 ARG SYSTEMCTL_URL="https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/master/files/docker/systemctl.py"
 
-RUN (apt-get update || (sleep 5 && apt-get update)) && \
+RUN for i in 1 2 3 4 5; do apt-get update && break || (echo "apt-get update failed, retry $i..." && sleep 15); done && \
     apt-get install -y --no-install-recommends \
         socat \
         bash-completion \

@@ -54,7 +54,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=${GITHUB_REF#refs/tags/}
-          gh release create "$version" --title "$version" --notes "Release $version" || echo "Release already exists"
+          # 删除已有的同名 Release，避免 422 冲突
+          gh release delete "$version" --yes 2>/dev/null || true
+          sleep 2
+          gh release create "$version" --title "$version" --notes "Release $version"
           gh release upload "$version" \
             result/trojan-linux-amd64 \
             result/trojan-linux-arm64 \
