@@ -311,6 +311,7 @@ type UserIPStatus struct {
 	Region   string `json:"region"`
 	City     string `json:"city"`
 	ISP      string `json:"isp"`
+	IsBanned bool   `json:"is_banned"`
 }
 
 // getActiveClientIPs 从系统网络套接字中获取当前活跃连接的所有 IP
@@ -372,6 +373,22 @@ func UserDetail(username string) *ResponseBody {
 		activeIPMap[ip] = true
 	}
 
+	bannedIPMap := make(map[string]bool)
+	db := mysql.GetDB()
+	if db != nil {
+		rows, err := db.Query("SELECT ip FROM ip_blacklist WHERE expire_at IS NULL OR expire_at > NOW()")
+		if err == nil {
+			for rows.Next() {
+				var ip string
+				if err := rows.Scan(&ip); err == nil {
+					bannedIPMap[ip] = true
+				}
+			}
+			rows.Close()
+		}
+		db.Close()
+	}
+
 	var ipStatusList []UserIPStatus
 	for _, info := range ipInfos {
 		ipStatusList = append(ipStatusList, UserIPStatus{
@@ -381,6 +398,7 @@ func UserDetail(username string) *ResponseBody {
 			Region:   info.Region,
 			City:     info.City,
 			ISP:      info.ISP,
+			IsBanned: bannedIPMap[info.IP],
 		})
 	}
 

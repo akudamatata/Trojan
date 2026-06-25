@@ -1,11 +1,9 @@
 package core
 
 import (
-	"database/sql"
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 // FirewallType represents the detected firewall system
