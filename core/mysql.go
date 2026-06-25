@@ -125,6 +125,18 @@ CREATE TABLE IF NOT EXISTS user_sub_logs (
 ) DEFAULT CHARSET=utf8mb4;
 `
 
+var CreateIPBlacklistTableSql = `
+CREATE TABLE IF NOT EXISTS ip_blacklist (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ip VARCHAR(45) NOT NULL,
+    ban_type VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expire_at TIMESTAMP NULL,
+    PRIMARY KEY (id),
+    UNIQUE INDEX idx_ip (ip)
+) DEFAULT CHARSET=utf8mb4;
+`
+
 // GetDB 获取mysql数据库连接
 func (mysql *Mysql) GetDB() *sql.DB {
 	// 屏蔽mysql驱动包 of 日志输出
@@ -163,6 +175,9 @@ func (mysql *Mysql) CreateTable() {
 	}
 	if _, err := db.Exec(CreateUserSubLogsTableSql); err != nil {
 		fmt.Println("CreateUserSubLogsTableSql error:", err)
+	}
+	if _, err := db.Exec(CreateIPBlacklistTableSql); err != nil {
+		fmt.Println("CreateIPBlacklistTableSql error:", err)
 	}
 }
 

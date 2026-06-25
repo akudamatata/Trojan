@@ -865,3 +865,151 @@ func GetUserDomainStats(username string) *ResponseBody {
 	return &responseBody
 }
 
+// IPBlacklistItem represents an item in the IP blacklist
+type IPBlacklistItem struct {
+	ID        uint    `json:"id"`
+	IP        string  `json:"ip"`
+	BanType   string  `json:"ban_type"`
+	CreatedAt string  `json:"created_at"`
+	ExpireAt  *string `json:"expire_at"`
+}
+
+// GetIPBlacklist returns all blacklisted IPs
+func GetIPBlacklist() *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	mysql := core.GetMysql()
+	db := mysql.GetDB()
+	if db == nil {
+		responseBody.Msg = "db error"
+		return &responseBody
+	}
+	defer db.Close()
+
+	rows, err := db.Query("SELECT id, ip, ban_type, created_at, expire_at FROM ip_blacklist ORDER BY id DESC")
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer rows.Close()
+
+	list := []IPBlacklistItem{}
+	for rows.Next() {
+		var item IPBlacklistItem
+		var createdAtTime time.Time
+		var expireAtTime sql.NullTime
+
+		err := rows.Scan(&item.ID, &item.IP, &item.BanType, &createdAtTime, &expireAtTime)
+		if err == nil {
+			item.CreatedAt = createdAtTime.Format("2006-01-02 15:04:05")
+			if expireAtTime.Valid {
+				expStr := expireAtTime.Time.Format("2006-01-02 15:04:05")
+				item.ExpireAt = &expStr
+			}
+			list = append(list, item)
+		}
+	}
+
+	responseBody.Data = list
+	return &responseBody
+}
+
+// BanIP bans a client IP for a specified duration
+func BanIP(ip, duration string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	if ip == "" {
+		responseBody.Msg = "IP cannot be empty"
+		return &responseBody
+	}
+
+	mysql := core.GetMysql()
+	db := mysql.GetDB()
+	if db == nil {
+		responseBody.Msg = "db error"
+		return &responseBody
+	}
+	defer db.Close()
+
+	var expireAt *time.Time
+	now := time.Now()
+	switch duration {
+	case "day":
+		t := now.AddDate(0, 0, 1)
+		expireAt = &t
+	case "week":
+		t := now.AddDate(0, 0, 7)
+		expireAt = &t
+	case "month":
+		t := now.AddDate(0, 1, 0)
+		expireAt = &t
+	case "permanent":
+		expireAt = nil
+	default:
+		responseBody.Msg = "invalid duration"
+		return &responseBody
+	}
+
+	// 1. Write to DB (insert or update)
+	var err error
+	if expireAt != nil {
+		_, err = db.Exec("INSERT INTO ip_blacklist (ip, ban_type, expire_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE ban_type = VALUES(ban_type), expire_at = VALUES(expire_at)", ip, duration, *expireAt)
+	} else {
+		_, err = db.Exec("INSERT INTO ip_blacklist (ip, ban_type, expire_at) VALUES (?, ?, NULL) ON DUPLICATE KEY UPDATE ban_type = VALUES(ban_type), expire_at = NULL", ip, duration)
+	}
+
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+
+	// 2. Call firewall block. Unblock first to clean up duplicate rules.
+	core.UnblockIP(ip)
+	if err := core.BlockIP(ip); err != nil {
+		responseBody.Msg = "Failed to apply firewall rule: " + err.Error()
+		return &responseBody
+	}
+
+	// 3. Force kill active connections from this IP immediately
+	KillConnectionsByIP(ip)
+
+	return &responseBody
+}
+
+// UnbanIP unbans a client IP
+func UnbanIP(ip string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	if ip == "" {
+		responseBody.Msg = "IP cannot be empty"
+		return &responseBody
+	}
+
+	mysql := core.GetMysql()
+	db := mysql.GetDB()
+	if db == nil {
+		responseBody.Msg = "db error"
+		return &responseBody
+	}
+	defer db.Close()
+
+	// 1. Delete from DB
+	_, err := db.Exec("DELETE FROM ip_blacklist WHERE ip = ?", ip)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+
+	// 2. Call firewall unblock
+	if err := core.UnblockIP(ip); err != nil {
+		responseBody.Msg = "Failed to remove firewall rule: " + err.Error()
+		return &responseBody
+	}
+
+	return &responseBody
+}
+
+

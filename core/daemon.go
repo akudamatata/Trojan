@@ -115,6 +115,16 @@ func StartDaemon() {
 	service := getActiveService()
 	fmt.Printf("[Daemon] Starting log parser for service: %s\n", service)
 
+	// 恢复已有的黑名单规则到防火墙，并启动定时清理过期黑名单
+	SyncBlacklist()
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			CleanExpiredBlacklist()
+		}
+	}()
+
 	// 启动定时刷新协程：每 30 秒将内存中的聚合数据批量写入 MySQL
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)

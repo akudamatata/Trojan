@@ -85,6 +85,18 @@ func userRouter(router *gin.Engine) {
 			clientIP := c.PostForm("client_ip")
 			c.JSON(200, controller.KillConnectionsByIP(clientIP))
 		})
+		user.GET("/blacklist", func(c *gin.Context) {
+			c.JSON(200, controller.GetIPBlacklist())
+		})
+		user.POST("/blacklist/ban", func(c *gin.Context) {
+			ip := c.PostForm("ip")
+			duration := c.PostForm("duration")
+			c.JSON(200, controller.BanIP(ip, duration))
+		})
+		user.POST("/blacklist/unban", func(c *gin.Context) {
+			ip := c.PostForm("ip")
+			c.JSON(200, controller.UnbanIP(ip))
+		})
 		user.GET("/traffic-history", func(c *gin.Context) {
 			username := c.Query("username")
 			c.JSON(200, controller.GetUserTrafficHistory(username))
