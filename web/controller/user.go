@@ -481,7 +481,11 @@ func getActiveSocketsWithPort() []string {
 				ip = strings.Trim(ip, "[]")
 				portStr := peer[idx+1:]
 				if parsedIP := net.ParseIP(ip); parsedIP != nil {
-					ipPorts = append(ipPorts, ip+":"+portStr)
+					normIP := parsedIP.String()
+					if ipv4 := parsedIP.To4(); ipv4 != nil {
+						normIP = ipv4.String()
+					}
+					ipPorts = append(ipPorts, normIP+":"+portStr)
 				}
 			}
 		}
@@ -569,13 +573,27 @@ func KillActiveConnection(clientIP string, clientPort string) *ResponseBody {
 		return &responseBody
 	}
 
-	// 执行 ss -K state established dst [ip] dport = :[port]
+	// 1. 尝试使用 ss -K 直接断开（如果内核支持，这是最快的方式）
 	cmdStr := fmt.Sprintf("ss -K state established dst %s dport = :%s", clientIP, clientPort)
-	out, err := exec.Command("bash", "-c", cmdStr).CombinedOutput()
-	if err != nil {
-		responseBody.Msg = fmt.Sprintf("Kill failed: %v, output: %s", err, string(out))
-		return &responseBody
-	}
+	exec.Command("bash", "-c", cmdStr).Run()
+
+	// 2. 对于不支持 CONFIG_INET_DIAG_DESTROY 的内核，使用 iptables + conntrack 强制断流
+	inputRule := fmt.Sprintf("/usr/sbin/iptables -I INPUT -p tcp -s %s --sport %s -j REJECT --reject-with tcp-reset", clientIP, clientPort)
+	outputRule := fmt.Sprintf("/usr/sbin/iptables -I OUTPUT -p tcp -d %s --dport %s -j REJECT --reject-with tcp-reset", clientIP, clientPort)
+	conntrackCmd := fmt.Sprintf("/usr/sbin/conntrack -D -p tcp -s %s --sport %s", clientIP, clientPort)
+
+	exec.Command("bash", "-c", inputRule).Run()
+	exec.Command("bash", "-c", outputRule).Run()
+	exec.Command("bash", "-c", conntrackCmd).Run()
+
+	// 2秒后在后台自动清理 iptables 规则，避免影响新连接
+	go func() {
+		time.Sleep(2 * time.Second)
+		cleanInput := fmt.Sprintf("/usr/sbin/iptables -D INPUT -p tcp -s %s --sport %s -j REJECT --reject-with tcp-reset", clientIP, clientPort)
+		cleanOutput := fmt.Sprintf("/usr/sbin/iptables -D OUTPUT -p tcp -d %s --dport %s -j REJECT --reject-with tcp-reset", clientIP, clientPort)
+		exec.Command("bash", "-c", cleanInput).Run()
+		exec.Command("bash", "-c", cleanOutput).Run()
+	}()
 
 	// 成功后，从内存 map 中删除
 	core.ActiveConnsMu.Lock()
