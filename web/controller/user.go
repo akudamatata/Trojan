@@ -603,6 +603,93 @@ func KillActiveConnection(clientIP string, clientPort string) *ResponseBody {
 	return &responseBody
 }
 
+// KillConnectionsByIP 强行切断某个 IP 的所有活跃会话（无需端口，直接枚举 ss 当前所有连接）
+func KillConnectionsByIP(clientIP string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	if clientIP == "" {
+		responseBody.Msg = "IP is null"
+		return &responseBody
+	}
+
+	// 1. 通过 ss 枚举该 IP 的所有活跃端口
+	_, trojanPort := trojan.GetDomainAndPort()
+	cmdStr := fmt.Sprintf("ss -t -H -a sport = :%d dst %s", trojanPort, clientIP)
+	out, _ := exec.Command("bash", "-c", cmdStr).CombinedOutput()
+
+	killedCount := 0
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 5 {
+			continue
+		}
+		peer := fields[4]
+		idx := strings.LastIndex(peer, ":")
+		if idx == -1 {
+			continue
+		}
+		portStr := peer[idx+1:]
+		if portStr == "" || portStr == "*" {
+			continue
+		}
+
+		// ss -K 断开单个连接（带端口）
+		ssKill := fmt.Sprintf("ss -K state established dst %s dport = :%s", clientIP, portStr)
+		exec.Command("bash", "-c", ssKill).Run()
+
+		// iptables 方式兜底
+		inputRule := fmt.Sprintf("/usr/sbin/iptables -I INPUT -p tcp -s %s --sport %s -j REJECT --reject-with tcp-reset", clientIP, portStr)
+		outputRule := fmt.Sprintf("/usr/sbin/iptables -I OUTPUT -p tcp -d %s --dport %s -j REJECT --reject-with tcp-reset", clientIP, portStr)
+		conntrackCmd := fmt.Sprintf("/usr/sbin/conntrack -D -p tcp -s %s --sport %s", clientIP, portStr)
+		exec.Command("bash", "-c", inputRule).Run()
+		exec.Command("bash", "-c", outputRule).Run()
+		exec.Command("bash", "-c", conntrackCmd).Run()
+
+		// 2 秒后清理 iptables 规则
+		pStr := portStr
+		go func() {
+			time.Sleep(2 * time.Second)
+			cleanIn := fmt.Sprintf("/usr/sbin/iptables -D INPUT -p tcp -s %s --sport %s -j REJECT --reject-with tcp-reset", clientIP, pStr)
+			cleanOut := fmt.Sprintf("/usr/sbin/iptables -D OUTPUT -p tcp -d %s --dport %s -j REJECT --reject-with tcp-reset", clientIP, pStr)
+			exec.Command("bash", "-c", cleanIn).Run()
+			exec.Command("bash", "-c", cleanOut).Run()
+		}()
+
+		// 从内存 map 中删除
+		ipPort := clientIP + ":" + portStr
+		core.ActiveConnsMu.Lock()
+		delete(core.ActiveConns, ipPort)
+		core.ActiveConnsMu.Unlock()
+
+		killedCount++
+	}
+
+	// 如果 ss 没找到端口（持久连接但无子隧道），fallback：直接按 IP 拒绝所有流量
+	if killedCount == 0 {
+		inputRule := fmt.Sprintf("/usr/sbin/iptables -I INPUT -p tcp -s %s -j REJECT --reject-with tcp-reset", clientIP)
+		outputRule := fmt.Sprintf("/usr/sbin/iptables -I OUTPUT -p tcp -d %s -j REJECT --reject-with tcp-reset", clientIP)
+		conntrackCmd := fmt.Sprintf("/usr/sbin/conntrack -D -p tcp --src %s", clientIP)
+		exec.Command("bash", "-c", inputRule).Run()
+		exec.Command("bash", "-c", outputRule).Run()
+		exec.Command("bash", "-c", conntrackCmd).Run()
+
+		ip := clientIP
+		go func() {
+			time.Sleep(3 * time.Second)
+			cleanIn := fmt.Sprintf("/usr/sbin/iptables -D INPUT -p tcp -s %s -j REJECT --reject-with tcp-reset", ip)
+			cleanOut := fmt.Sprintf("/usr/sbin/iptables -D OUTPUT -p tcp -d %s -j REJECT --reject-with tcp-reset", ip)
+			exec.Command("bash", "-c", cleanIn).Run()
+			exec.Command("bash", "-c", cleanOut).Run()
+		}()
+		killedCount = 1 // 表示已执行断流操作
+	}
+
+	responseBody.Data = map[string]interface{}{"killed": killedCount}
+	return &responseBody
+}
+
 // GetUserTrafficHistory 获取用户最近 30 天的每日流量数据
 func GetUserTrafficHistory(username string) *ResponseBody {
 	responseBody := ResponseBody{Msg: "success"}

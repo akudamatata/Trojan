@@ -81,6 +81,10 @@ func userRouter(router *gin.Engine) {
 			clientPort := c.PostForm("client_port")
 			c.JSON(200, controller.KillActiveConnection(clientIP, clientPort))
 		})
+		user.POST("/kill-by-ip", func(c *gin.Context) {
+			clientIP := c.PostForm("client_ip")
+			c.JSON(200, controller.KillConnectionsByIP(clientIP))
+		})
 		user.GET("/traffic-history", func(c *gin.Context) {
 			username := c.Query("username")
 			c.JSON(200, controller.GetUserTrafficHistory(username))
