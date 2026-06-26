@@ -220,7 +220,8 @@ func commonRouter(router *gin.Engine) {
 		common.POST("/loginInfo", func(c *gin.Context) {
 			title := c.PostForm("title")
 			footer := c.PostForm("footer")
-			c.JSON(200, controller.SetLoginInfo(title, footer))
+			sidebarTitle := c.PostForm("sidebar_title")
+			c.JSON(200, controller.SetLoginInfo(title, footer, sidebarTitle))
 		})
 		common.GET("/camouflageDomain", func(c *gin.Context) {
 			c.JSON(200, controller.GetCamouflageDomain())

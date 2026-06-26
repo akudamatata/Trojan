@@ -151,8 +151,9 @@ func Auth(r *gin.Engine, timeout int) *jwt.GinJWTMiddleware {
 		"code":    201,
 		"message": "No administrator account found inside the database",
 		"data": map[string]string{
-			"title":  "trojan 管理平台",
-			"footer": "",
+			"title":         "trojan 管理平台",
+			"footer":        "",
+			"sidebar_title": "",
 		},
 	}
 	r.NoRoute(authMiddleware.MiddlewareFunc(), func(c *gin.Context) {
@@ -173,12 +174,17 @@ func Auth(r *gin.Engine, timeout int) *jwt.GinJWTMiddleware {
 			if err != nil {
 				footer = ""
 			}
+			sidebarTitle, err := core.GetValue("sidebar_title")
+			if err != nil {
+				sidebarTitle = ""
+			}
 			c.JSON(200, gin.H{
 				"code":    200,
 				"message": "success",
 				"data": map[string]string{
-					"title":  title,
-					"footer": footer,
+					"title":         title,
+					"footer":        footer,
+					"sidebar_title": sidebarTitle,
 				},
 			})
 		}
