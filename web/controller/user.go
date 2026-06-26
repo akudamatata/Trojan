@@ -906,7 +906,7 @@ func GetIPBlacklist() *ResponseBody {
 	}
 	defer db.Close()
 
-	rows, err := db.Query("SELECT id, ip, ban_type, created_at, expire_at FROM ip_blacklist ORDER BY id DESC")
+	rows, err := db.Query("SELECT id, ip, ban_type, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s'), DATE_FORMAT(expire_at, '%Y-%m-%d %H:%i:%s') FROM ip_blacklist ORDER BY id DESC")
 	if err != nil {
 		responseBody.Msg = err.Error()
 		return &responseBody
@@ -916,17 +916,18 @@ func GetIPBlacklist() *ResponseBody {
 	list := []IPBlacklistItem{}
 	for rows.Next() {
 		var item IPBlacklistItem
-		var createdAtTime time.Time
-		var expireAtTime sql.NullTime
+		var createdAt string
+		var expireAt sql.NullString
 
-		err := rows.Scan(&item.ID, &item.IP, &item.BanType, &createdAtTime, &expireAtTime)
+		err := rows.Scan(&item.ID, &item.IP, &item.BanType, &createdAt, &expireAt)
 		if err == nil {
-			item.CreatedAt = createdAtTime.Format("2006-01-02 15:04:05")
-			if expireAtTime.Valid {
-				expStr := expireAtTime.Time.Format("2006-01-02 15:04:05")
-				item.ExpireAt = &expStr
+			item.CreatedAt = createdAt
+			if expireAt.Valid {
+				item.ExpireAt = &expireAt.String
 			}
 			list = append(list, item)
+		} else {
+			fmt.Println("[Firewall] GetIPBlacklist scan error:", err)
 		}
 	}
 
