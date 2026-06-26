@@ -69,10 +69,15 @@ func Version() *ResponseBody {
 }
 
 // SetLoginInfo 设置登录页信息
-func SetLoginInfo(title string) *ResponseBody {
+func SetLoginInfo(title, footer string) *ResponseBody {
 	responseBody := ResponseBody{Msg: "success"}
 	defer TimeCost(time.Now(), &responseBody)
 	err := core.SetValue("login_title", title)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	err = core.SetValue("login_footer", footer)
 	if err != nil {
 		responseBody.Msg = err.Error()
 	}

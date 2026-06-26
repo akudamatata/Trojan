@@ -147,7 +147,14 @@ func RequestUsername(c *gin.Context) string {
 func Auth(r *gin.Engine, timeout int) *jwt.GinJWTMiddleware {
 	jwtInit(timeout)
 
-	newInstall := gin.H{"code": 201, "message": "No administrator account found inside the database", "data": nil}
+	newInstall := gin.H{
+		"code":    201,
+		"message": "No administrator account found inside the database",
+		"data": map[string]string{
+			"title":  "trojan 管理平台",
+			"footer": "",
+		},
+	}
 	r.NoRoute(authMiddleware.MiddlewareFunc(), func(c *gin.Context) {
 		claims := jwt.ExtractClaims(c)
 		fmt.Printf("NoRoute claims: %#v\n", claims)
@@ -159,14 +166,19 @@ func Auth(r *gin.Engine, timeout int) *jwt.GinJWTMiddleware {
 			c.JSON(201, newInstall)
 		} else {
 			title, err := core.GetValue("login_title")
-			if err != nil {
+			if err != nil || title == "" {
 				title = "trojan 管理平台"
+			}
+			footer, err := core.GetValue("login_footer")
+			if err != nil {
+				footer = ""
 			}
 			c.JSON(200, gin.H{
 				"code":    200,
 				"message": "success",
 				"data": map[string]string{
-					"title": title,
+					"title":  title,
+					"footer": footer,
 				},
 			})
 		}

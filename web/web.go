@@ -218,7 +218,9 @@ func commonRouter(router *gin.Engine) {
 			c.JSON(200, controller.ResetClashRules())
 		})
 		common.POST("/loginInfo", func(c *gin.Context) {
-			c.JSON(200, controller.SetLoginInfo(c.PostForm("title")))
+			title := c.PostForm("title")
+			footer := c.PostForm("footer")
+			c.JSON(200, controller.SetLoginInfo(title, footer))
 		})
 		common.GET("/camouflageDomain", func(c *gin.Context) {
 			c.JSON(200, controller.GetCamouflageDomain())
