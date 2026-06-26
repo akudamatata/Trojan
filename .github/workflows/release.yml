@@ -54,11 +54,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=${GITHUB_REF#refs/tags/}
-          # 删除已有的同名 Release，避免 422 冲突
-          gh release delete "$version" --yes 2>/dev/null || true
-          sleep 2
-          gh release create "$version" --title "$version" --notes "Release $version"
-          gh release upload "$version" \
+
+          # 1. 删除 Release 并同时清理 tag，彻底规避 422 冲突
+          gh release delete "$version" --yes --cleanup-tag 2>/dev/null || true
+
+          # 2. 等待 GitHub API 完成清理（删除是异步的）
+          sleep 5
+
+          # 3. 将本次构建触发的 tag 重新推到远端
+          git push origin "refs/tags/$version"
+
+          # 4. 等待 tag 在 GitHub 端注册完毕
+          sleep 3
+
+          # 5. 创建 Release 并上传二进制产物
+          gh release create "$version" \
+            --title "$version" \
+            --notes "Release $version" \
             result/trojan-linux-amd64 \
-            result/trojan-linux-arm64 \
-            --clobber
+            result/trojan-linux-arm64
