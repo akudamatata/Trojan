@@ -99,9 +99,13 @@ func flushBuffers() {
 	domainBuffer = make(map[domainKey]int)
 	domainBufferMu.Unlock()
 
+	dateToday := time.Now().Format("2006-01-02")
 	for dk, count := range domainSnapshot {
 		if err := mysql.SaveUserDomainBatch(dk.Username, dk.Domain, count); err != nil {
 			fmt.Printf("[Daemon] Error flushing domain %s->%s: %v\n", dk.Username, dk.Domain, err)
+		}
+		if err := mysql.SaveUserDomainDailyBatch(dk.Username, dk.Domain, count, dateToday); err != nil {
+			fmt.Printf("[Daemon] Error flushing daily domain %s->%s: %v\n", dk.Username, dk.Domain, err)
 		}
 	}
 

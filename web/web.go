@@ -109,6 +109,23 @@ func userRouter(router *gin.Engine) {
 			username := c.Query("username")
 			c.JSON(200, controller.GetUserDomainStats(username))
 		})
+		user.GET("/audit/list", func(c *gin.Context) {
+			username := c.Query("username")
+			domain := c.Query("domain")
+			category := c.Query("category")
+			hideCDN := c.Query("hide_cdn") == "true"
+			dateStart := c.Query("date_start")
+			dateEnd := c.Query("date_end")
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+			c.JSON(200, controller.GetUserAuditList(username, domain, category, hideCDN, dateStart, dateEnd, page, limit))
+		})
+		user.GET("/audit/domain-users", func(c *gin.Context) {
+			domain := c.Query("domain")
+			dateStart := c.Query("date_start")
+			dateEnd := c.Query("date_end")
+			c.JSON(200, controller.GetDomainUsersList(domain, dateStart, dateEnd))
+		})
 	}
 }
 

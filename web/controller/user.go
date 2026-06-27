@@ -1032,4 +1032,206 @@ func UnbanIP(ip string) *ResponseBody {
 	return &responseBody
 }
 
+// UserAuditRecord 行为审计单条记录
+type UserAuditRecord struct {
+	Username       string `json:"username"`
+	Domain         string `json:"domain"`
+	MappedDomain   string `json:"mapped_domain"`
+	Category       string `json:"category"`
+	VisitCount     int    `json:"visit_count"`
+	LastVisitedAt  string `json:"last_visited_at"`
+	Date           string `json:"date"`
+}
+
+// GetUserAuditList 获取行为审计列表
+func GetUserAuditList(usernameParam, domainParam, categoryParam string, hideCDN bool, dateStart, dateEnd string, page, limit int) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	mysql := core.GetMysql()
+	db := mysql.GetDB()
+	if db == nil {
+		responseBody.Msg = "db error"
+		return &responseBody
+	}
+	defer db.Close()
+
+	// 拼装 SQL 查询条件
+	whereClauses := []string{"1=1"}
+	var args []interface{}
+
+	if usernameParam != "" {
+		whereClauses = append(whereClauses, "username LIKE ?")
+		args = append(args, "%"+usernameParam+"%")
+	}
+	if domainParam != "" {
+		whereClauses = append(whereClauses, "domain LIKE ?")
+		args = append(args, "%"+domainParam+"%")
+	}
+	if dateStart != "" {
+		whereClauses = append(whereClauses, "date >= ?")
+		args = append(args, dateStart)
+	}
+	if dateEnd != "" {
+		whereClauses = append(whereClauses, "date <= ?")
+		args = append(args, dateEnd)
+	}
+
+	// 1. 查询所有符合基础条件的数据并在内存中清洗过滤（因为分类和静态 CDN 状态是动态判定的）
+	querySql := "SELECT username, domain, date, visit_count, last_visited_at FROM user_domains_daily WHERE " + 
+		strings.Join(whereClauses, " AND ") + " ORDER BY last_visited_at DESC LIMIT 5000"
+	
+	rows, err := db.Query(querySql, args...)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer rows.Close()
+
+	var allRecords []UserAuditRecord
+	for rows.Next() {
+		var r UserAuditRecord
+		var lastVisited time.Time
+		if err := rows.Scan(&r.Username, &r.Domain, &r.Date, &r.VisitCount, &lastVisited); err == nil {
+			r.LastVisitedAt = lastVisited.Format("2006-01-02 15:04:05")
+			
+			// 动态映射和分类
+			info := core.GetDomainAuditInfo(r.Domain)
+			r.MappedDomain = info.MappedDomain
+			r.Category = info.Category
+
+			// 过滤静态 CDN
+			if hideCDN && info.IsStaticCDN {
+				continue
+			}
+
+			// 过滤类别
+			if categoryParam != "" && r.Category != categoryParam {
+				continue
+			}
+
+			allRecords = append(allRecords, r)
+		}
+	}
+
+	// 2. 分页处理
+	total := len(allRecords)
+	startIndex := (page - 1) * limit
+	if startIndex < 0 {
+		startIndex = 0
+	}
+	endIndex := startIndex + limit
+	if endIndex > total {
+		endIndex = total
+	}
+
+	var pagedRecords []UserAuditRecord
+	if startIndex < total {
+		pagedRecords = allRecords[startIndex:endIndex]
+	} else {
+		pagedRecords = []UserAuditRecord{}
+	}
+
+	responseBody.Data = map[string]interface{}{
+		"total":   total,
+		"records": pagedRecords,
+	}
+	return &responseBody
+}
+
+// DomainUserRecord 某个域名的用户访问统计
+type DomainUserRecord struct {
+	Username       string `json:"username"`
+	VisitCount     int    `json:"visit_count"`
+	LastVisitedAt  string `json:"last_visited_at"`
+}
+
+// GetDomainUsersList 获取访问某个特定域名的用户排行
+func GetDomainUsersList(domainQuery string, dateStart, dateEnd string) *ResponseBody {
+	responseBody := ResponseBody{Msg: "success"}
+	defer TimeCost(time.Now(), &responseBody)
+
+	mysql := core.GetMysql()
+	db := mysql.GetDB()
+	if db == nil {
+		responseBody.Msg = "db error"
+		return &responseBody
+	}
+	defer db.Close()
+
+	whereClauses := []string{"1=1"}
+	var args []interface{}
+
+	if dateStart != "" {
+		whereClauses = append(whereClauses, "date >= ?")
+		args = append(args, dateStart)
+	}
+	if dateEnd != "" {
+		whereClauses = append(whereClauses, "date <= ?")
+		args = append(args, dateEnd)
+	}
+
+	querySql := "SELECT username, domain, visit_count, last_visited_at FROM user_domains_daily WHERE " + 
+		strings.Join(whereClauses, " AND ") + " ORDER BY last_visited_at DESC LIMIT 5000"
+	
+	rows, err := db.Query(querySql, args...)
+	if err != nil {
+		responseBody.Msg = err.Error()
+		return &responseBody
+	}
+	defer rows.Close()
+
+	// 聚合用户数据
+	userMap := make(map[string]*DomainUserRecord)
+	domainQueryLower := strings.ToLower(domainQuery)
+
+	for rows.Next() {
+		var username, domain string
+		var count int
+		var lastVisited time.Time
+		if err := rows.Scan(&username, &domain, &count, &lastVisited); err == nil {
+			info := core.GetDomainAuditInfo(domain)
+			
+			// 匹配：当原始域名包含查询字符串，或者映射主品牌名称包含查询字符串时匹配
+			match := strings.Contains(strings.ToLower(domain), domainQueryLower) || 
+				strings.Contains(strings.ToLower(info.MappedDomain), domainQueryLower)
+			
+			if !match {
+				continue
+			}
+
+			lastVisitedStr := lastVisited.Format("2006-01-02 15:04:05")
+			if record, exists := userMap[username]; exists {
+				record.VisitCount += count
+				if lastVisitedStr > record.LastVisitedAt {
+					record.LastVisitedAt = lastVisitedStr
+				}
+			} else {
+				userMap[username] = &DomainUserRecord{
+					Username:      username,
+					VisitCount:    count,
+					LastVisitedAt: lastVisitedStr,
+				}
+			}
+		}
+	}
+
+	var records []DomainUserRecord
+	for _, r := range userMap {
+		records = append(records, *r)
+	}
+
+	// 排序：按访问次数降序
+	for i := 0; i < len(records); i++ {
+		for j := i + 1; j < len(records); j++ {
+			if records[i].VisitCount < records[j].VisitCount {
+				records[i], records[j] = records[j], records[i]
+			}
+		}
+	}
+
+	responseBody.Data = records
+	return &responseBody
+}
+
 

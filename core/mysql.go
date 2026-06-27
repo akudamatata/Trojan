@@ -98,6 +98,19 @@ CREATE TABLE IF NOT EXISTS user_domains (
 ) DEFAULT CHARSET=utf8mb4;
 `
 
+var CreateUserDomainsDailyTableSql = `
+CREATE TABLE IF NOT EXISTS user_domains_daily (
+    username VARCHAR(64) NOT NULL,
+    domain VARCHAR(255) NOT NULL,
+    date DATE NOT NULL,
+    visit_count INT NOT NULL DEFAULT 1,
+    last_visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (username, domain, date),
+    INDEX idx_date (date),
+    INDEX idx_domain (domain)
+) DEFAULT CHARSET=utf8mb4;
+`
+
 var CreateUserTrafficDailyTableSql = `
 CREATE TABLE IF NOT EXISTS user_traffic_daily (
     username VARCHAR(64) NOT NULL,
@@ -169,6 +182,9 @@ func (mysql *Mysql) CreateTable() {
 	}
 	if _, err := db.Exec(CreateUserDomainsTableSql); err != nil {
 		fmt.Println("CreateUserDomainsTableSql error:", err)
+	}
+	if _, err := db.Exec(CreateUserDomainsDailyTableSql); err != nil {
+		fmt.Println("CreateUserDomainsDailyTableSql error:", err)
 	}
 	if _, err := db.Exec(CreateUserTrafficDailyTableSql); err != nil {
 		fmt.Println("CreateUserTrafficDailyTableSql error:", err)
@@ -596,6 +612,21 @@ func (mysql *Mysql) SaveUserDomainBatch(username string, domain string, count in
 	return err
 }
 
+// SaveUserDomainDailyBatch 批量累加用户域名的每日访问统计
+func (mysql *Mysql) SaveUserDomainDailyBatch(username string, domain string, count int, date string) error {
+	db := mysql.GetDB()
+	if db == nil {
+		return errors.New("can't connect mysql")
+	}
+	defer db.Close()
+	_, err := db.Exec(`
+		INSERT INTO user_domains_daily (username, domain, date, visit_count, last_visited_at) 
+		VALUES (?, ?, ?, ?, NOW()) 
+		ON DUPLICATE KEY UPDATE visit_count = visit_count + ?, last_visited_at = NOW()
+	`, username, domain, date, count, count)
+	return err
+}
+
 // GetUserIPs 获取用户最近一个月内连入过的 IP 列表（含缓存的 GeoIP 数据）
 func (mysql *Mysql) GetUserIPs(username string) ([]UserIPInfo, error) {
 	db := mysql.GetDB()
@@ -708,10 +739,14 @@ func (mysql *Mysql) CleanOldUserLogs() error {
 	defer db.Close()
 	_, errIP := db.Exec("DELETE FROM user_ips WHERE last_connected_at < NOW() - INTERVAL 30 DAY")
 	_, errDomain := db.Exec("DELETE FROM user_domains WHERE last_visited_at < NOW() - INTERVAL 30 DAY")
+	_, errDailyDomain := db.Exec("DELETE FROM user_domains_daily WHERE date < DATE_SUB(CURDATE(), INTERVAL 30 DAY)")
 	if errIP != nil {
 		return errIP
 	}
-	return errDomain
+	if errDomain != nil {
+		return errDomain
+	}
+	return errDailyDomain
 }
 
 // UserTrafficDaily 结构体，用于返回用户每日流量记录
