@@ -36,6 +36,7 @@ jobs:
           mkdir -p web/templates
           cp -r temp-web/dist/* web/templates/
           rm -rf temp-web
+          sed -i 's|https://lib.baomitu.com/echarts/5.4.3/echarts.min.js|https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js|g' web/templates/index.html
 
       - name: Build Binary
         run: |
