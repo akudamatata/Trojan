@@ -1093,6 +1093,8 @@ func GetUserAuditList(usernameParam, domainParam, categoryParam string, hideCDN 
 		var r UserAuditRecord
 		var lastVisited string
 		if err := rows.Scan(&r.Username, &r.Domain, &r.Date, &r.VisitCount, &lastVisited); err == nil {
+			r.Username = sanitizeString(r.Username)
+			r.Domain = sanitizeString(r.Domain)
 			r.LastVisitedAt = lastVisited
 			
 			// 动态映射和分类
@@ -1190,6 +1192,8 @@ func GetDomainUsersList(domainQuery string, dateStart, dateEnd string) *Response
 		var count int
 		var lastVisited string
 		if err := rows.Scan(&username, &domain, &count, &lastVisited); err == nil {
+			username = sanitizeString(username)
+			domain = sanitizeString(domain)
 			info := core.GetDomainAuditInfo(domain)
 			
 			// 匹配：当原始域名包含查询字符串，或者映射主品牌名称包含查询字符串时匹配
@@ -1234,4 +1238,10 @@ func GetDomainUsersList(domainQuery string, dateStart, dateEnd string) *Response
 	return &responseBody
 }
 
-
+// sanitizeString removes control characters that may break frontend rendering (e.g. Echarts eval)
+func sanitizeString(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\ufffd", "?")
+	return s
+}
