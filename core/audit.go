@@ -41,6 +41,10 @@ var domainToBrandRules = []struct {
 	{Suffix: "bilibili.com", Brand: "Bilibili", Category: "社交与视频"},
 	{Suffix: "hdslb.com", Brand: "Bilibili", Category: "社交与视频"},
 	{Suffix: "bilivideo.com", Brand: "Bilibili", Category: "社交与视频"},
+	{Suffix: "bilivideo.cn", Brand: "Bilibili", Category: "社交与视频"},
+	{Suffix: "b23.tv", Brand: "Bilibili", Category: "社交与视频"},
+	{Suffix: "acgvideo.com", Brand: "Bilibili", Category: "社交与视频"},
+	{Suffix: "acg.tv", Brand: "Bilibili", Category: "社交与视频"},
 	{Suffix: "biliapi.net", Brand: "Bilibili", Category: "社交与视频"},
 	{Suffix: "biliapi.com", Brand: "Bilibili", Category: "社交与视频"},
 	{Suffix: "twitter.com", Brand: "X (Twitter)", Category: "社交与视频"},
@@ -89,6 +93,7 @@ var staticCDNSuffixes = []string{
 	"myqcloud.com", "aliyuncs.com", "dnsv1.com", "qbox.me", "qiniu.com",
 	"alicdn.com", "bdstatic.com", "hdslb.com", "phncdn.com", "twimg.com",
 	"fbcdn.net", "cdninstagram.com", "sbcdn.co", "xv-ru.com", "xvideos-cdn.com", "xvv1deos.com",
+	"bilivideo.cn", "b23.tv", "acgvideo.com",
 }
 
 // GetDomainAuditInfo 获取域名的归类与品牌合并详情
@@ -123,6 +128,8 @@ func GetDomainAuditInfo(domain string) DomainAuditInfo {
 	if strings.Contains(domain, "googlevideo.com") ||
 		strings.Contains(domain, "hdslb.com") ||
 		strings.Contains(domain, "bilivideo.com") ||
+		strings.Contains(domain, "bilivideo.cn") ||
+		strings.Contains(domain, "acgvideo.com") ||
 		strings.Contains(domain, "phncdn.com") ||
 		strings.Contains(domain, "xvideos-cdn.com") ||
 		strings.Contains(domain, "xvv1deos.com") ||
