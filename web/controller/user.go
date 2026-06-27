@@ -1091,9 +1091,9 @@ func GetUserAuditList(usernameParam, domainParam, categoryParam string, hideCDN 
 	var allRecords []UserAuditRecord
 	for rows.Next() {
 		var r UserAuditRecord
-		var lastVisited time.Time
+		var lastVisited string
 		if err := rows.Scan(&r.Username, &r.Domain, &r.Date, &r.VisitCount, &lastVisited); err == nil {
-			r.LastVisitedAt = lastVisited.Format("2006-01-02 15:04:05")
+			r.LastVisitedAt = lastVisited
 			
 			// 动态映射和分类
 			info := core.GetDomainAuditInfo(r.Domain)
@@ -1188,7 +1188,7 @@ func GetDomainUsersList(domainQuery string, dateStart, dateEnd string) *Response
 	for rows.Next() {
 		var username, domain string
 		var count int
-		var lastVisited time.Time
+		var lastVisited string
 		if err := rows.Scan(&username, &domain, &count, &lastVisited); err == nil {
 			info := core.GetDomainAuditInfo(domain)
 			
@@ -1200,7 +1200,7 @@ func GetDomainUsersList(domainQuery string, dateStart, dateEnd string) *Response
 				continue
 			}
 
-			lastVisitedStr := lastVisited.Format("2006-01-02 15:04:05")
+			lastVisitedStr := lastVisited
 			if record, exists := userMap[username]; exists {
 				record.VisitCount += count
 				if lastVisitedStr > record.LastVisitedAt {
