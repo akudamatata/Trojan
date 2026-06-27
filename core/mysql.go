@@ -195,6 +195,18 @@ func (mysql *Mysql) CreateTable() {
 	if _, err := db.Exec(CreateIPBlacklistTableSql); err != nil {
 		fmt.Println("CreateIPBlacklistTableSql error:", err)
 	}
+
+	// 迁移存量历史数据
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM user_domains_daily").Scan(&count)
+	if err == nil && count == 0 {
+		fmt.Println("Migrating historical domain data from user_domains to user_domains_daily...")
+		_, _ = db.Exec(`
+			INSERT INTO user_domains_daily (username, domain, date, visit_count, last_visited_at)
+			SELECT username, domain, DATE(last_visited_at), visit_count, last_visited_at
+			FROM user_domains
+		`)
+	}
 }
 
 func queryUserList(db *sql.DB, sql string) ([]*User, error) {
